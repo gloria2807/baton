@@ -1,0 +1,23 @@
+{
+  "ledgerly_marked.png": {
+    "goal": "Start entering a new bill",
+    "correct_mark": 5,
+    "marks": {
+      "1": "nav Bills",
+      "2": "nav Vendors",
+      "3": "nav Reports",
+      "4": "nav Settings",
+      "5": "button + New bill",
+      "6": "search box",
+      "7": "row BL-0418",
+      "8": "row BL-0419",
+      "9": "row BL-0420"
+    }
+  },
+  "cue_short.webm": {
+    "transcript": "Get me there."
+  },
+  "cue_long.webm": {
+    "transcript": "Find me a hotel within walking distance of this venue for the three nights of the conference, under two hundred dollars a night, and add the dates to my calendar."
+  }
+}

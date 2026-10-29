@@ -1,0 +1,30 @@
+{
+  "name": "@baton/desktop",
+  "productName": "Baton",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Baton: point, speak, and conduct agents in your own browser.",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "selftest": "node build.mjs && electron . --selftest",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json"
+  },
+  "dependencies": {
+    "@baton/core": "*",
+    "@baton/model": "*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "uiohook-napi": "^1.5.5",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.1.0",
+    "vite": "^8.3.5"
+  }
+}

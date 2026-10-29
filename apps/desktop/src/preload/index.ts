@@ -10,7 +10,11 @@ const on = (channel: string) => (fn: (payload: unknown) => void) => {
 
 const api = {
   init: () => ipcRenderer.invoke('podium:init'),
-  expand: (expanded: boolean) => ipcRenderer.invoke('podium:expand', expanded),
+  resize: (height: number) => ipcRenderer.invoke('podium:resize', height),
+  answerCard: (id: number, answer: unknown) => ipcRenderer.invoke('card:answer', id, answer),
+  stopAll: () => ipcRenderer.invoke('lanes:stopAll'),
+  onLanes: on('lanes'),
+  onCards: on('cards'),
   copyToken: () => ipcRenderer.invoke('pairing:copy'),
   runSelfTest: () => ipcRenderer.invoke('selftest:run'),
   sendCue: (wav: Uint8Array, seconds: number) => ipcRenderer.invoke('cue:audio', wav, seconds),

@@ -2,6 +2,7 @@
 // windows with chrome.debugger (DevTools Protocol) for screenshots, mouse and keyboard.
 
 import { BRIDGE_PORT, PROTOCOL_VERSION, ToExtension, parseFrame, type Command, type FromExtension, type LookResult } from '@baton/core/bridge';
+import { toIsoDate } from '@baton/core/lane/dates';
 import type { CollectResult, LaneInfo, TargetResult, ToContent, ToWorker } from './messages';
 
 interface Lane extends LaneInfo {
@@ -106,24 +107,46 @@ async function toTab<T>(tabId: number, msg: ToContent, timeoutMs = 8000): Promis
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Wait for the page to load. Busy real sites (maps, feeds) stream forever and never reach
+// "complete"; once the document is usable, a few seconds is enough and the lane carries on.
 async function waitForLoad(tabId: number, timeoutMs = 15000) {
   const until = Date.now() + timeoutMs;
+  let usableSince = 0;
   while (Date.now() < until) {
     const tab = await chrome.tabs.get(tabId);
     if (tab.status === 'complete') return;
-    await sleep(100);
+    if (!usableSince && (await documentUsable(tabId))) usableSince = Date.now();
+    if (usableSince && Date.now() - usableSince > 4000) return;
+    await sleep(150);
   }
-  throw new Error('page did not finish loading in 15 s');
+  if (!(await documentUsable(tabId))) throw new Error('page did not load in 15 s');
+}
+
+async function documentUsable(tabId: number): Promise<boolean> {
+  try {
+    const r = await cdpSend<{ result: { value?: string } }>(tabId, 'Runtime.evaluate', { expression: 'document.readyState', returnByValue: true });
+    return r.result.value === 'interactive' || r.result.value === 'complete';
+  } catch {
+    return false;
+  }
+}
+
+// A DevTools command may wait on a frame Chrome never draws (window hidden); never wait forever.
+function cdpSend<T>(tabId: number, method: string, params: Record<string, unknown>): Promise<T> {
+  return Promise.race([
+    chrome.debugger.sendCommand({ tabId }, method, params) as Promise<T>,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${method} got no answer in 8 s (is the lane window hidden?)`)), 8000)),
+  ]);
 }
 
 async function cdp<T = unknown>(tabId: number, method: string, params: Record<string, unknown> = {}): Promise<T> {
   try {
-    return (await chrome.debugger.sendCommand({ tabId }, method, params)) as T;
+    return await cdpSend<T>(tabId, method, params);
   } catch (e) {
     // The person may have dismissed the debugging bar; attach again and retry once.
     if (/not attached/i.test((e as Error).message)) {
       await attach(tabId);
-      return (await chrome.debugger.sendCommand({ tabId }, method, params)) as T;
+      return await cdpSend<T>(tabId, method, params);
     }
     throw e;
   }
@@ -135,6 +158,9 @@ async function attach(tabId: number) {
   } catch (e) {
     if (!/already attached/i.test((e as Error).message)) throw e;
   }
+  // The person keeps using their own mouse and windows while lanes work. Without this, a lane page
+  // loses focus whenever another window is active, and text it types goes nowhere.
+  await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => undefined);
 }
 
 async function mouse(tabId: number, x: number, y: number) {
@@ -177,10 +203,16 @@ async function execute(c: Command): Promise<unknown> {
     case 'ping':
       return 'pong';
 
+    case 'reloadExtension':
+      setTimeout(() => chrome.runtime.reload(), 200);
+      return true;
+
     case 'openLane': {
       const existing = lanes.get(c.laneId);
       if (existing) await closeLane(existing);
-      const win = await chrome.windows.create({ url: c.url, focused: false, type: 'normal', ...(c.bounds ?? { width: 1280, height: 860 }) });
+      // Lanes open in front: they are meant to be watched, and Chrome stops drawing (and stalls
+      // DevTools input for) windows that are completely covered by others.
+      const win = await chrome.windows.create({ url: c.url, focused: true, type: 'normal', ...(c.bounds ?? { width: 1280, height: 860 }) });
       const tabId = win?.tabs?.[0]?.id;
       if (!win?.id || tabId === undefined) throw new Error('could not open a lane window');
       const l: Lane = { laneId: c.laneId, color: c.color, title: c.title, thinking: '', windowId: win.id, tabId };
@@ -227,7 +259,7 @@ async function execute(c: Command): Promise<unknown> {
           await toTab(l.tabId, { kind: 'cursorVisible', visible: true });
         }
       }
-      const result: LookResult = { url: page.url, title: page.title, viewport: page.viewport, scale, screenshot, elements: page.elements, text: page.text };
+      const result: LookResult = { url: page.url, title: page.title, viewport: page.viewport, scale, screenshot, elements: page.elements, text: page.text, hidden: page.hidden };
       return result;
     }
 
@@ -251,6 +283,12 @@ async function execute(c: Command): Promise<unknown> {
       const l = lane(c.laneId);
       const pos = await aim(l, { mark: c.mark }, true);
       await toTab(l.tabId, { kind: 'clickPulse' });
+      if (pos.inputType === 'date') {
+        const iso = toIsoDate(c.text);
+        if (!iso) throw new Error(`“${c.text}” is not a date; write it as YYYY-MM-DD`);
+        await toTab(l.tabId, { kind: 'setDate', mark: c.mark, iso });
+        return { name: pos.name };
+      }
       await mouse(l.tabId, pos.x, pos.y);
       // Replace what is there: select all, then insert.
       await cdp(l.tabId, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2, commands: ['selectAll'] });
@@ -272,14 +310,31 @@ async function execute(c: Command): Promise<unknown> {
       return true;
     }
 
+    case 'select': {
+      const l = lane(c.laneId);
+      const pos = await aim(l, { mark: c.mark });
+      await toTab(l.tabId, { kind: 'clickPulse' });
+      const chosen = await toTab<string>(l.tabId, { kind: 'select', mark: c.mark, option: c.option });
+      return { name: pos.name, chosen };
+    }
+
+    case 'back': {
+      const l = lane(c.laneId);
+      await chrome.tabs.goBack(l.tabId);
+      await sleep(200);
+      await waitForLoad(l.tabId);
+      return true;
+    }
+
     case 'scroll': {
       const l = lane(c.laneId);
-      const tab = await chrome.tabs.get(l.tabId);
-      const x = Math.round((tab.width ?? 1200) / 2);
-      const y = Math.round((tab.height ?? 800) / 2);
-      await cdp(l.tabId, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY: c.dy });
-      await sleep(300);
-      return true;
+      // Scrolling is not a person's input that needs to be trusted, so the page does it itself:
+      // a DevTools wheel event waits for a compositor frame and can stall.
+      if (c.mark !== undefined) {
+        await toTab(l.tabId, { kind: 'scrollTo', mark: c.mark });
+        return true;
+      }
+      return toTab(l.tabId, { kind: 'scrollBy', dy: c.dy });
     }
 
     case 'setThinking': {

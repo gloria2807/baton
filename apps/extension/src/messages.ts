@@ -17,6 +17,10 @@ export type ToContent =
   | { kind: 'moveCursor'; x: number; y: number }
   | { kind: 'clickPulse' }
   | { kind: 'setThinking'; text: string }
+  | { kind: 'select'; mark: number; option: string }
+  | { kind: 'setDate'; mark: number; iso: string }
+  | { kind: 'scrollTo'; mark: number }
+  | { kind: 'scrollBy'; dy: number }
   | { kind: 'cursorVisible'; visible: boolean };
 
 export type ToWorker = { kind: 'whoami' };
@@ -29,6 +33,7 @@ export interface CollectResult {
   dpr: number;
   elements: Element[];
   text: string;
+  hidden: Array<{ source: 'hidden' | 'comment' | 'attribute'; text: string }>;
 }
 
 export interface TargetResult {
@@ -36,4 +41,5 @@ export interface TargetResult {
   y: number;
   blocked?: string; // human message when the field must not be typed into
   name: string;
+  inputType?: string;
 }

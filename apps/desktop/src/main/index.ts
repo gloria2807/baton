@@ -4,9 +4,11 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, powerMonitor, screen, session, Tray } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { TALK_KEYS, isTalkKeyId, type TalkKeyId } from '@baton/core';
+import { LookResult, TALK_KEYS, isTalkKeyId, type TalkKeyId } from '@baton/core';
 import { Model } from '@baton/model';
+import { runBench } from './bench';
 import { BridgeServer } from './bridge-server';
+import { Conductor, type CardAnswer } from './conductor';
 import { log } from './log';
 import { loadEnv, loadPairingToken, outDir } from './paths';
 import { PushToTalk } from './ptt';
@@ -25,12 +27,13 @@ export interface CueUpdate {
   error?: string;
 }
 
-const PODIUM = { width: 680, collapsed: 92, expanded: 330 };
+const PODIUM = { width: 680, collapsed: 92, max: 760 };
 
 let podium: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let bridge: BridgeServer;
 let model: Model | null = null;
+let conductor: Conductor;
 const token = loadPairingToken();
 const settings = loadSettings();
 const ptt = new PushToTalk(settings.talkKey);
@@ -46,7 +49,8 @@ function setTalkKey(key: TalkKeyId) {
   refreshTray();
 }
 
-if (!app.requestSingleInstanceLock()) app.quit();
+// A second launch only hands its flags to the running Baton (see 'second-instance'), then exits.
+if (!app.requestSingleInstanceLock()) app.exit(0);
 
 function send(channel: string, payload: unknown) {
   podium?.webContents.send(channel, payload);
@@ -154,6 +158,9 @@ async function handleCue(wav: Uint8Array, seconds: number) {
     const r = await model.transcribeCue(wav);
     log(`cue heard in ${Math.round(r.ms)} ms`);
     send('cue', { phase: 'heard', transcript: r.value.transcript, intent: r.value.intent, ms: Math.round(r.ms), file } satisfies CueUpdate);
+    const said = r.value.transcript.trim();
+    // A waiting card (approval, question) takes the answer; otherwise the cue starts a lane.
+    if (said && !conductor.answerByVoice(said)) void conductor.fromCue(said);
   } catch (e) {
     send('cue', { phase: 'error', error: (e as Error).message, file } satisfies CueUpdate);
   }
@@ -179,17 +186,23 @@ app.whenReady().then(async () => {
   }
   bridge.on('paired', () => send('extension', 'connected' satisfies ExtensionState));
   bridge.on('unpaired', () => send('extension', 'waiting' satisfies ExtensionState));
+  conductor = new Conductor(bridge, () => model, send);
 
   ipcMain.handle('podium:init', () => ({ extension: extensionState(), token, hasModel: !!model, talkKey: settings.talkKey, talkKeys: talkKeyOptions() }));
   ipcMain.handle('settings:talkKey', (_e, key: unknown) => {
     if (isTalkKeyId(key)) setTalkKey(key);
     return settings.talkKey;
   });
-  ipcMain.handle('podium:expand', (_e, expanded: boolean) => {
-    if (!podium) return;
+  // The Podium grows to fit its cards; the renderer reports its content height.
+  ipcMain.handle('podium:resize', (_e, height: unknown) => {
+    if (!podium || typeof height !== 'number') return;
     const [x, y] = podium.getPosition() as [number, number];
-    podium.setBounds({ x, y, width: PODIUM.width, height: expanded ? PODIUM.expanded : PODIUM.collapsed });
+    podium.setBounds({ x, y, width: PODIUM.width, height: Math.round(Math.min(PODIUM.max, Math.max(PODIUM.collapsed, height))) });
   });
+  ipcMain.handle('card:answer', (_e, id: unknown, answer: unknown) => {
+    if (typeof id === 'number' && answer && typeof answer === 'object') conductor.answer(id, answer as CardAnswer);
+  });
+  ipcMain.handle('lanes:stopAll', () => conductor.stopAll());
   ipcMain.handle('pairing:copy', () => clipboard.writeText(token));
   ipcMain.on('mic:timing', (_e, openMs: unknown, seconds: unknown, timing: unknown) => {
     if (typeof seconds === 'number')
@@ -215,14 +228,60 @@ app.whenReady().then(async () => {
     bridge.stop();
   });
 
-  if (process.argv.includes('--selftest')) {
-    log('self-test: waiting for the Chrome extension to connect');
+  handleArgs(process.argv);
+  // Running `electron . --task=…` again hands its flags to this instance instead of starting a second Baton.
+  app.on('second-instance', (_e, argv) => handleArgs(argv));
+});
+
+// Development and gate-check flags.
+function handleArgs(argv: string[]) {
+  const arg = (name: string) => argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const whenPaired = (fn: () => Promise<unknown>, label: string) =>
     bridge
       .waitForPairing(10 * 60 * 1000)
-      .then(runSelfTest)
-      .catch((e) => log(`SELFTEST_RESULT ${JSON.stringify({ ok: false, error: (e as Error).message })}`));
+      .then(fn)
+      .catch((e) => log(`${label} failed: ${(e as Error).message}`));
+
+  if (argv.includes('--selftest')) {
+    log('self-test: waiting for the Chrome extension to connect');
+    void whenPaired(runSelfTest, 'SELFTEST');
   }
-});
+
+  // --probe=<url>: type into the first text field of a page and report what the field holds.
+  const probe = arg('probe');
+  if (probe)
+    void whenPaired(async () => {
+      await bridge.request({ op: 'openLane', laneId: 'probe', url: probe, color: '#eab308', title: 'Probe', bounds: conductor.laneBounds() }, 30000);
+      const look = async () => LookResult.parse(await bridge.request({ op: 'look', laneId: 'probe', screenshot: false }, 30000));
+      const field = (await look()).elements.find((e) => e.role === 'textbox' && !e.blocked);
+      if (!field) return log('PROBE no text field');
+      const typed = await bridge.request({ op: 'type', laneId: 'probe', mark: field.mark, text: 'Ama Owusu', submit: false }, 20000).catch((e) => `error ${(e as Error).message}`);
+      const after = (await look()).elements.find((e) => e.name === field.name);
+      log(`PROBE field “${field.name}” (autocomplete hints: ${field.hints ?? '-'}) type → ${JSON.stringify(typed)}; now holds “${after?.value ?? '?'}”`);
+    }, 'PROBE');
+
+  // Pick up a rebuilt extension.
+  if (argv.includes('--reload-extension')) void whenPaired(() => bridge.request({ op: 'reloadExtension' }), 'reload-extension');
+
+  // --task="goal" --url=https://… runs one supervised lane, for gate checks without speaking.
+  const task = arg('task');
+  if (task)
+    void whenPaired(
+      () =>
+        conductor
+          .runOne({ name: arg('name') ?? 'Blue', goal: task, startUrl: arg('url') ?? 'https://www.google.com/' })
+          .then((out) => log(`TASK_RESULT ${JSON.stringify({ status: out.status, result: out.result, steps: out.steps, ms: out.ms, receipts: out.receipts })}`)),
+      'TASK',
+    );
+
+  // --bench or --bench=id,id runs the benchmark unattended (no approvals beyond each task's own).
+  const bench = argv.find((a) => a === '--bench' || a.startsWith('--bench='));
+  if (bench)
+    void whenPaired(
+      () => (model ? runBench(bridge, model, conductor, bench.includes('=') ? bench.split('=')[1]!.split(',') : undefined) : Promise.reject(new Error('no Baseten key'))),
+      'BENCH',
+    );
+}
 
 // The Podium lives in the tray; closing windows does not quit Baton.
 app.on('window-all-closed', () => undefined);

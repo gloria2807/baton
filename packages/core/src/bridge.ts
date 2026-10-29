@@ -34,6 +34,12 @@ export const Element = z.object({
   blocked: z.boolean().optional(),
   // Signals the safety classifier uses to spot blocked fields (autocomplete, name, id, label).
   hints: z.string().optional(),
+  // The form this control belongs to, so the approval gate knows what a click or Enter submits.
+  form: z.object({ method: z.string(), action: z.string(), submitLabel: z.string().optional() }).optional(),
+  // Options of a <select>, so the lane can choose one by its text.
+  options: z.array(z.string()).optional(),
+  // Listed but scrolled out of view; acting on it scrolls it into view first.
+  offscreen: z.boolean().optional(),
 });
 export type Element = z.infer<typeof Element>;
 
@@ -49,7 +55,11 @@ export const Command = z.discriminatedUnion('op', [
   z.object({ op: z.literal('click'), laneId: LaneId, ...target }),
   z.object({ op: z.literal('type'), laneId: LaneId, mark: z.number().int().positive(), text: z.string().max(5000), submit: z.boolean().default(false) }),
   z.object({ op: z.literal('key'), laneId: LaneId, key: z.enum(['Enter', 'Tab', 'Escape', 'Backspace', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp']) }),
-  z.object({ op: z.literal('scroll'), laneId: LaneId, dy: z.number().int() }),
+  z.object({ op: z.literal('scroll'), laneId: LaneId, dy: z.number().int().default(0), mark: z.number().int().positive().optional() }),
+  z.object({ op: z.literal('select'), laneId: LaneId, mark: z.number().int().positive(), option: z.string().max(200) }),
+  z.object({ op: z.literal('back'), laneId: LaneId }),
+  // Development: pick up a rebuilt extension without a trip to chrome://extensions.
+  z.object({ op: z.literal('reloadExtension') }),
   z.object({ op: z.literal('setThinking'), laneId: LaneId, text: z.string().max(140) }),
 ]);
 export type Command = z.infer<typeof Command>;
@@ -64,6 +74,8 @@ export const LookResult = z.object({
   screenshot: z.string().optional(), // base64 JPEG, marks visible
   elements: z.array(Element),
   text: z.string(),
+  // Text a person cannot see (HTML comments, attributes, invisible text), for the injection detector.
+  hidden: z.array(z.object({ source: z.enum(['hidden', 'comment', 'attribute']), text: z.string() })).default([]),
 });
 export type LookResult = z.infer<typeof LookResult>;
 

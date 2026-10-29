@@ -27,7 +27,7 @@ export class BridgeSession {
   constructor(
     private readonly transport: Transport,
     private readonly token: string,
-    private readonly hooks: { onPaired?: () => void; onEvent?: (e: LaneEvent) => void; onLog?: (m: string) => void } = {},
+    private readonly hooks: { onPaired?: (extensionVersion: string) => void; onEvent?: (e: LaneEvent) => void; onLog?: (m: string) => void } = {},
     helloTimeoutMs = 5000,
   ) {
     this.helloTimer = setTimeout(() => this.reject('no hello'), helloTimeoutMs);
@@ -51,7 +51,7 @@ export class BridgeSession {
       clearTimeout(this.helloTimer);
       this.paired = true;
       this.send({ type: 'welcome', version: PROTOCOL_VERSION });
-      this.hooks.onPaired?.();
+      this.hooks.onPaired?.(msg.extensionVersion);
       return;
     }
     if (msg.type === 'result') {

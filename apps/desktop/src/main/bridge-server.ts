@@ -16,6 +16,7 @@ export class BridgeServer extends EventEmitter<BridgeEvents> {
   private wss: WebSocketServer | null = null;
   private active: { session: BridgeSession; socket: WebSocket } | null = null;
   private pinger: ReturnType<typeof setInterval> | null = null;
+  extensionVersion = '';
 
   constructor(
     private readonly token: string,
@@ -51,12 +52,13 @@ export class BridgeServer extends EventEmitter<BridgeEvents> {
       { send: (f) => socket.send(f), close: (code, reason) => socket.close(code, reason) },
       this.token,
       {
-        onPaired: () => {
+        onPaired: (version) => {
           // One extension at a time: the newest paired connection wins.
           if (this.active && this.active.socket !== socket) this.active.socket.close(4000, 'replaced');
           this.active = { session, socket };
+          this.extensionVersion = version;
           this.startPinging();
-          log('extension paired');
+          log(`extension ${version} paired`);
           this.emit('paired');
         },
         onEvent: (e) => this.emit('laneEvent', e),

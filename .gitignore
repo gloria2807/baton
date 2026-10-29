@@ -8,3 +8,4 @@ release/
 receipts/
 bench/runs/
 video/out/
+*.tsbuildinfo

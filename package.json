@@ -3,13 +3,38 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "demo-sites"
+  ],
   "scripts": {
-    "spike": "tsx scripts/model-spike.ts"
+    "spike": "tsx scripts/model-spike.ts",
+    "build": "npm run build -w @baton/extension && npm run build -w @baton/desktop",
+    "demo-sites": "npm run start -w @baton/demo-sites",
+    "desktop": "npm run start -w @baton/desktop",
+    "test": "vitest run",
+    "typecheck": "tsc -b packages/core packages/model && npm run typecheck -w @baton/extension && npm run typecheck -w @baton/desktop && npm run typecheck -w @baton/demo-sites",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "selftest": "npm run selftest -w @baton/desktop",
+    "demo:reset": "node scripts/demo-reset.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/chrome": "^0.3.7",
     "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.13.0",
+    "prettier": "^3.9.10",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "uiohook-napi@1.5.5": true
   },
   "dependencies": {
     "openai": "^7.45.1",

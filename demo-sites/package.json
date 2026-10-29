@@ -1,0 +1,10 @@
+{
+  "name": "@baton/demo-sites",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc -p ."
+  }
+}

@@ -29,6 +29,8 @@ html, body, #root { margin: 0; height: 100%; background: transparent; overflow: 
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: box-shadow 0.4s var(--ease), border-color 0.4s var(--ease);
 }
+.main.opening { color: var(--muted); }
+.bar.phase-opening { border-color: rgba(139, 155, 255, 0.3); }
 .bar.phase-listening { border-color: rgba(139, 155, 255, 0.55); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 4px rgba(139, 155, 255, 0.14); }
 
 .mark { display: grid; grid-template-columns: 11px 11px; gap: 5px; flex: none; }

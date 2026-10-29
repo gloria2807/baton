@@ -15,6 +15,7 @@ const api = {
   runSelfTest: () => ipcRenderer.invoke('selftest:run'),
   sendCue: (wav: Uint8Array, seconds: number) => ipcRenderer.invoke('cue:audio', wav, seconds),
   setTalkKey: (key: string) => ipcRenderer.invoke('settings:talkKey', key),
+  reportMic: (openMs: number | null, seconds: number, timing: string) => ipcRenderer.send('mic:timing', openMs, seconds, timing),
   onTalkKey: on('talkKey'),
   onExtension: on('extension'),
   onPtt: on('ptt'),

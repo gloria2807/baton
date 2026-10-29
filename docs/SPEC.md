@@ -129,15 +129,75 @@ Served locally from `demo-sites/` on `http://localhost:4400` and up. All fiction
 
 Real sites are better on camera where they hold up. Use the demo sites to develop and test, and as the backup if a real site blocks automation on the day.
 
-## Model contract (fill in during Stage 0)
+## Model contract (measured in Stage 0, 2026-10-29)
 
-Record here exactly what worked against `meta-models/muse-spark-open-1026`:
+Measured with `npm run spike` (`scripts/model-spike.ts`) and `npx tsx scripts/audio-repeat.ts` against `meta-models/muse-spark-open-1026`. Raw numbers land in `bench/runs/spike-*.json` (git-ignored). Both `meta-models/muse-spark-open` and `meta-models/muse-spark-open-1026` are listed by `/v1/models` for our key; Baton uses the `-1026` name.
 
-- JSON-only output: request shape, where the reasoning appears, whether a JSON response format or tool calling is supported.
-- Images: content part format, the largest screenshot size that works well, latency for a 1280×800 screenshot with marks.
-- Audio: content part format, accepted encodings, latency and transcription quality for a 5-second and a 15-second recording.
-- Streaming: whether reasoning and answer can be streamed, and how.
-- Cost per typical lane step and per planning call, and how many lane steps per minute the 2M TPM limit allows.
+### Request shape
+
+- OpenAI SDK, `baseURL: https://inference.baseten.co/v1`, Chat Completions.
+- `reasoning_effort` is a top-level field: `low | medium | high | xhigh` (Baseten's default is `xhigh`, so always set it). The model always reasons.
+- Reasoning comes back in `message.reasoning_content`, separate from the answer in `message.content`. `usage.completion_tokens_details.reasoning_tokens` counts it.
+- Set `max_tokens` with headroom for reasoning (we use 8000 for spikes); reasoning tokens count toward it.
+- `n > 1` returns HTTP 400. Output is not reproducible.
+
+### JSON output
+
+- A system prompt that gives the exact JSON shape plus "Reply with JSON only" produced valid, zod-valid JSON on every call (planning, lane steps, cues, 8 of 8 parallel steps), with no code fences.
+- `response_format: {type: "json_object"}` is accepted without error, but Baseten documents it as unsupported for this model and it added nothing. **Do not rely on it.** Parse the first `{…}` in `content`, validate with zod, and retry once with the error.
+- **Tool calling works**: `tools` + `tool_choice: "auto"` returned a proper `tool_calls` entry (`click {mark: 5}`) with `finish_reason: tool_calls` in 1.9 s. It is available if a lane prefers it; the lane loop's default is JSON in `content`.
+
+### Planning
+
+| Effort | Time | Tokens out (reasoning) |
+|---|---|---|
+| low | 2.9–4.5 s | 615–729 (425–448) |
+| medium | 4.9–5.6 s | 1331–1434 (1003–1133) |
+
+Both produced sensible parallel parts with empty `dependsOn` for independent work. Use `low` for the first Score; `medium` adds about 1–2 s.
+
+### Images
+
+- Content part: `{type: "image_url", image_url: {url: "data:image/png;base64,…"}}`. Base64 data URLs work (100 MiB request-body limit). PNG, JPEG and WebP are accepted. PDFs are not.
+- The 1280×800 Ledgerly screenshot with marks plus the element list: **mark 5 chosen correctly on every call** (2 single, 8 parallel, 8 size runs, 1 streamed).
+- Lane step latency at `low`, 1280×800: **4.7–5.4 s** (1561 input tokens, ~80 output). The same step **text-only** (element list, no image): **1.2–1.3 s** (299 input tokens). Most image latency is before the first token (~3.8 s), not generation.
+- `image_url.detail` (`auto`/`low`) did not change the token count.
+
+| Screenshot | Input tokens | Latency | Correct |
+|---|---|---|---|
+| 960×600 | 1071 | 4.1 s | yes |
+| 1280×800 | 1561 | 4.7 s | yes |
+| 1920×1200 | 3268 | 8.1 s | yes |
+| 2560×1600 | 4301 | 5.4–9.1 s | yes |
+
+**Decision:** capture the lane viewport and downscale to at most 1280 px wide. Prefer a text-only step (element list + page text) when it is enough, and add the screenshot when the page is visual or the previous verification failed. This is the cheap-reads-first rule with a measured 4× speed reason.
+
+### Audio
+
+- Content part: `{type: "audio_url", audio_url: {url: "data:audio/wav;base64,…"}}`. The OpenAI SDK types do not know `audio_url`, so cast it. Baseten's documented encodings are WAV, MP3, FLAC, OGG (Vorbis/Opus) and M4A/AAC. Raw `audio/webm` was accepted but was the least reliable. Up to 4 files, 25 MB and 5 minutes each.
+- The fixtures are 0.79 s ("Get me there.") and 8.6 s (the hotel request), robotic offline TTS, not the 5 s and 15 s the plan expected.
+- **Unpadded audio fails on short commands:** the 0.79 s cue was exact in only 0–2 of 5 runs per format (ogg, wav, webm), often coming back empty or echoing the prompt text, which shows the model was not hearing the audio.
+- **Padding fixes it:** decoding to 16 kHz mono WAV with **1 s of silence before and after** gave 31 of 32 exact for the short cue and 13 of 16 exact for the long cue. Every long-cue miss was the robotic voice's "venue" heard as "menu" (plus "3" for "three"); the intent was always right.
+- Latency with padded WAV at `low`: **3.9–4.5 s** short, **5.7–6.4 s** long. Unpadded Ogg/Opus was ~3.3 s but unreliable.
+- **Decision (provisional, pending your call at the Stage 0 gate):** send the push-to-talk recording to Muse Spark Open as 16 kHz mono WAV padded with 1 s of silence each side, with the prompt asking for `{transcript, intent}` as JSON. Re-measure with a real human voice once push-to-talk records in Stage 1. The fallback remains a small local speech model.
+
+### Streaming
+
+- `stream: true` works. Reasoning streams in `delta.reasoning_content`, then the answer in `delta.content`.
+- For a lane step at `low`, the first reasoning chunk arrived at 3.8–4.1 s and the answer at 3.9–4.2 s, about 0.2 s apart. At `low` there are only 7–10 reasoning chunks. Streaming will feed the lane's "thinking" line, but it will not make a lane step faster; for planning at `medium`, with about 1000 reasoning tokens, it gives a live line to show while the Score forms.
+
+### Parallel throughput
+
+- 8 identical image lane steps sent at once: **wall 5.8–6.3 s**, per request 3.6–6.3 s (mean 4.9–5.7 s), 8 of 8 valid and correct. That is **6.4–7× faster than running them in sequence**, and no 429s. Parallel lanes are real on Baseten.
+
+### Cost and rate
+
+At $1.25 per million input tokens and $4.25 per million output tokens:
+
+- Image lane step (1561 in, ~80 out): **≈ $0.0023**. Text-only step (≈300 in, ~80 out): **≈ $0.0007**.
+- Planning call at `low` (270 in, ~700 out, before real profile and anchors): **≈ $0.0033**.
+- Cue transcription (≈200–300 in, ~100–350 out): **≈ $0.001**.
+- Each image step is ~1650 tokens, so a 2M tokens-per-minute limit would allow about 1200 image steps per minute. Eight lanes at ~5 s per step use about 100 steps per minute, so the lane limit and step latency bound throughput, not TPM. We did not measure the TPM limit; this uses the figure the spec gives.
 
 ## Out of scope
 

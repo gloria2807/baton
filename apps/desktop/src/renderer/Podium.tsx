@@ -5,6 +5,7 @@ import { sounds } from './sounds';
 
 type Phase =
   | { kind: 'idle' }
+  | { kind: 'opening' }
   | { kind: 'listening'; since: number }
   | { kind: 'understanding'; seconds: number }
   | { kind: 'heard'; transcript: string; intent: string; ms: number; seconds: number }
@@ -38,6 +39,8 @@ export function Podium() {
   const seconds = useRef(0);
 
   useEffect(() => {
+    // Build the audio graph now so the talk key only has to open the microphone.
+    void recorder.current.warm().catch(() => undefined);
     void window.baton.init().then((s) => {
       setExtension(s.extension);
       setToken(s.token);
@@ -82,11 +85,15 @@ export function Podium() {
   }, [phase.kind]);
 
   async function begin() {
-    sounds.listen();
     setLevels(Array(BARS).fill(0));
-    setPhase({ kind: 'listening', since: Date.now() });
+    setPhase({ kind: 'opening' });
     try {
-      await recorder.current.start();
+      // The chime means "speak now": it plays only once the microphone is really capturing,
+      // so the first word of a cue is never lost while Windows opens the device.
+      await recorder.current.start(() => {
+        sounds.listen();
+        setPhase({ kind: 'listening', since: Date.now() });
+      });
     } catch (e) {
       setPhase({ kind: 'notice', text: `Microphone unavailable: ${(e as Error).message}`, tone: 'warn' });
     }
@@ -96,6 +103,7 @@ export function Podium() {
     // Acknowledge at once; the model works after this.
     sounds.release();
     const rec = await recorder.current.stop();
+    window.baton.reportMic(rec.openMs, rec.seconds, rec.timing);
     seconds.current = rec.seconds;
     if (rec.seconds < 0.25 || rms(rec.samples) < 0.004) {
       setPhase({ kind: 'notice', text: rec.seconds < 0.25 ? 'Hold the key while you speak.' : 'I didn’t hear anything.', tone: 'warn' });
@@ -136,6 +144,7 @@ export function Podium() {
               <div className="sub">{hasModel ? 'Release to send. Baton listens only while the key is down.' : 'No Baseten key found: recordings are saved but not understood.'}</div>
             </>
           )}
+          {phase.kind === 'opening' && <div className="main opening">Opening microphone…</div>}
           {phase.kind === 'listening' && (
             <div className="listening">
               <div className="wave">

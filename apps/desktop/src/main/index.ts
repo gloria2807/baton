@@ -68,7 +68,8 @@ function createPodium() {
     skipTaskbar: true,
     hasShadow: false,
     show: false,
-    webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    // The Podium resumes its audio graph from a global key press, which is not a page gesture.
+    webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, autoplayPolicy: 'no-user-gesture-required' },
   });
   podium.setAlwaysOnTop(true, 'screen-saver');
   podium.setVisibleOnAllWorkspaces(true);
@@ -190,6 +191,10 @@ app.whenReady().then(async () => {
     podium.setBounds({ x, y, width: PODIUM.width, height: expanded ? PODIUM.expanded : PODIUM.collapsed });
   });
   ipcMain.handle('pairing:copy', () => clipboard.writeText(token));
+  ipcMain.on('mic:timing', (_e, openMs: unknown, seconds: unknown, timing: unknown) => {
+    if (typeof seconds === 'number')
+      log(`microphone: first audio ${typeof openMs === 'number' ? `${openMs} ms` : 'never'} after start (${String(timing).slice(0, 80)}), ${seconds.toFixed(2)} s recorded`);
+  });
   ipcMain.handle('selftest:run', () => runSelfTest());
   ipcMain.handle('cue:audio', (_e, wav: Uint8Array, seconds: number) => void handleCue(wav, seconds));
 

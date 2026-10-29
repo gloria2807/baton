@@ -93,17 +93,32 @@ function animateCursor(x: number, y: number): Promise<void> {
   const bend = Math.min(80, dist * 0.18);
   const nx = -(y - from.y) / (dist || 1);
   const ny = (x - from.x) / (dist || 1);
+  // Nobody can see a hidden page, and Chrome pauses its animation frames: just arrive.
+  if (document.visibilityState !== 'visible') {
+    placeCursor(x, y);
+    return Promise.resolve();
+  }
   const t0 = performance.now();
   return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      placeCursor(x, y);
+      resolve();
+    };
     const frame = (now: number) => {
+      if (done) return;
       const t = Math.min(1, (now - t0) / duration);
       const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
       const arc = Math.sin(Math.PI * e) * bend;
       placeCursor(from.x + (x - from.x) * e + nx * arc, from.y + (y - from.y) * e + ny * arc);
       if (t < 1) requestAnimationFrame(frame);
-      else resolve();
+      else finish();
     };
     requestAnimationFrame(frame);
+    // If the window gets covered mid-glide, frames stop; never let that stall the lane.
+    setTimeout(finish, duration + 250);
   });
 }
 
@@ -118,9 +133,13 @@ function clickPulse() {
 
 // ── Element list ─────────────────────────────────────────────────────────
 
+const inViewport = (r: DOMRect) => !(r.bottom < 0 || r.right < 0 || r.top > window.innerHeight || r.left > window.innerWidth);
+
+// Rendered and usable, whether or not it is scrolled into view right now.
 function visible(el: HTMLElement, r: DOMRect): boolean {
   if (r.width < 2 || r.height < 2) return false;
-  if (r.bottom < 0 || r.right < 0 || r.top > window.innerHeight || r.left > window.innerWidth) return false;
+  // Far off to the side is a hiding trick, not a long page.
+  if (r.right < 0 || r.left > window.innerWidth) return false;
   const s = getComputedStyle(el);
   if (s.visibility === 'hidden' || s.display === 'none' || Number(s.opacity) === 0) return false;
   if ((el as HTMLInputElement).disabled) return false;
@@ -186,6 +205,51 @@ function blockedReason(el: HTMLElement) {
   });
 }
 
+function formOf(el: HTMLElement): Element['form'] {
+  const form = (el as HTMLInputElement).form ?? el.closest('form');
+  if (!form) return undefined;
+  const submit = form.querySelector<HTMLElement>('button:not([type=button]):not([type=reset]), input[type=submit]');
+  // Read attributes, never form.action / form.method: a control named "action" or "method"
+  // shadows those properties (DOM clobbering), which a page could use to fool the approval gate.
+  return {
+    method: (form.getAttribute('method') || 'get').toLowerCase(),
+    action: new URL(form.getAttribute('action') || location.href, location.href).href,
+    submitLabel: submit ? nameOf(submit) : undefined,
+  };
+}
+
+// Text a person cannot see but a model would read: comments, attributes, invisible elements.
+function hiddenText(): CollectResult['hidden'] {
+  const out: CollectResult['hidden'] = [];
+  let budget = 20000;
+  const push = (source: 'hidden' | 'comment' | 'attribute', text: string) => {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (t.length < 12 || budget <= 0) return;
+    budget -= t.length;
+    out.push({ source, text: t.slice(0, 2000) });
+  };
+  const comments = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_COMMENT);
+  while (comments.nextNode()) push('comment', comments.currentNode.nodeValue ?? '');
+  for (const el of document.querySelectorAll<HTMLElement>('body *')) {
+    if (host?.contains(el) || el.tagName === 'SCRIPT' || el.tagName === 'STYLE') continue;
+    for (const attr of el.attributes) {
+      if (/^(data-|aria-description|title$|alt$)/.test(attr.name)) push('attribute', attr.value);
+    }
+    const own = [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.nodeValue ?? '').join(' ');
+    if (own.trim().length < 12) continue;
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    const invisible =
+      !el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) ||
+      r.width < 2 || r.height < 2 || r.right < 0 || r.bottom < -window.scrollY ||
+      parseFloat(s.fontSize) < 4 ||
+      s.color === s.backgroundColor ||
+      (s.clip && s.clip !== 'auto');
+    if (invisible) push('hidden', own);
+  }
+  return out;
+}
+
 function collect(showMarks: boolean): CollectResult {
   ensureLayer();
   marked = new Map();
@@ -195,22 +259,33 @@ function collect(showMarks: boolean): CollectResult {
     if (host?.contains(el)) continue;
     const r = el.getBoundingClientRect();
     if (!visible(el, r)) continue;
+    // Long forms: list the whole page so a lane can see every field, but keep the list bounded.
+    if (n >= 200) break;
     const mark = ++n;
     marked.set(mark, el);
     const tag = el.tagName.toLowerCase();
     const i = el as HTMLInputElement;
     const blocked = blockedReason(el);
+    const select = tag === 'select' ? (el as HTMLSelectElement) : null;
+    let value: string | undefined;
+    // Never report what is in a blocked field.
+    if (select) value = select.selectedOptions[0]?.text ?? '';
+    else if (['input', 'textarea'].includes(tag) && !blocked && !['checkbox', 'radio', 'submit', 'button'].includes(i.type)) value = String(i.value).slice(0, 4000);
+    else if (['checkbox', 'radio'].includes(i.type)) value = i.checked ? 'checked' : 'unchecked';
     elements.push({
       mark,
       tag,
       role: roleOf(el),
       name: nameOf(el),
-      // Never report what is in a blocked field.
-      value: ['input', 'textarea', 'select'].includes(tag) && !blocked && !['checkbox', 'radio', 'submit', 'button'].includes(i.type) ? String(i.value).slice(0, 200) : undefined,
+      value,
       type: tag === 'input' ? i.type : undefined,
       href: tag === 'a' ? (el as HTMLAnchorElement).href : undefined,
       rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
       blocked: blocked ? true : undefined,
+      offscreen: inViewport(r) ? undefined : true,
+      hints: [el.getAttribute('name'), el.id, el.getAttribute('autocomplete'), i.placeholder, el.getAttribute('type')].filter(Boolean).join(' ') || undefined,
+      form: ['input', 'button', 'select', 'textarea'].includes(tag) ? formOf(el) : undefined,
+      options: select ? [...select.options].map((o) => o.text).slice(0, 40) : undefined,
     });
   }
   if (showMarks) drawMarks();
@@ -221,8 +296,23 @@ function collect(showMarks: boolean): CollectResult {
     scroll: { x: window.scrollX, y: window.scrollY },
     dpr: window.devicePixelRatio,
     elements,
-    text: (document.body?.innerText ?? '').replace(/\n{3,}/g, '\n\n').slice(0, 6000),
+    text: (document.body?.innerText ?? '').replace(/\n{3,}/g, '\n\n').slice(0, 12000),
+    hidden: hiddenText(),
   };
+}
+
+function chooseOption(mark: number, option: string): string {
+  const el = marked.get(mark);
+  if (!(el instanceof HTMLSelectElement)) throw new Error(`mark ${mark} is not a dropdown`);
+  const want = option.trim().toLowerCase();
+  const opt =
+    [...el.options].find((o) => o.text.trim().toLowerCase() === want || o.value.toLowerCase() === want) ??
+    [...el.options].find((o) => o.text.toLowerCase().includes(want));
+  if (!opt) throw new Error(`no option “${option}” in ${nameOf(el)} (options: ${[...el.options].map((o) => o.text).join(', ')})`);
+  el.value = opt.value;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return opt.text;
 }
 
 function drawMarks() {
@@ -230,6 +320,7 @@ function drawMarks() {
   layer.innerHTML = '';
   for (const [mark, el] of marked) {
     const r = el.getBoundingClientRect();
+    if (!inViewport(r)) continue; // only what the screenshot can show
     const box = document.createElement('div');
     box.className = 'box';
     Object.assign(box.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
@@ -251,7 +342,25 @@ async function target(msg: Extract<ToContent, { kind: 'target' }>): Promise<Targ
     r = el.getBoundingClientRect();
   }
   const reason = msg.forTyping ? blockedReason(el) : null;
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), name: nameOf(el), blocked: reason ? blockedFieldMessage(reason) : undefined };
+  if (msg.forTyping && !reason) el.focus();
+  return {
+    x: Math.round(r.left + r.width / 2),
+    y: Math.round(r.top + r.height / 2),
+    name: nameOf(el),
+    blocked: reason ? blockedFieldMessage(reason) : undefined,
+    inputType: el instanceof HTMLInputElement ? el.type : undefined,
+  };
+}
+
+// Date inputs ignore inserted text; set the ISO value the way a picker would.
+function setDate(mark: number, iso: string): string {
+  const el = marked.get(mark);
+  if (!(el instanceof HTMLInputElement) || el.type !== 'date') throw new Error(`mark ${mark} is not a date field`);
+  el.focus();
+  el.value = iso;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return el.value;
 }
 
 chrome.runtime.onMessage.addListener((msg: ToContent, _sender, reply) => {
@@ -280,6 +389,23 @@ chrome.runtime.onMessage.addListener((msg: ToContent, _sender, reply) => {
       case 'cursorVisible':
         q('.cursor').classList.toggle('hidden', !msg.visible);
         return true;
+      case 'select':
+        return chooseOption(msg.mark, msg.option);
+      case 'setDate':
+        return setDate(msg.mark, msg.iso);
+      case 'scrollBy': {
+        const y0 = window.scrollY;
+        window.scrollBy({ top: msg.dy, behavior: document.visibilityState === 'visible' ? 'smooth' : 'instant' });
+        await new Promise((r) => setTimeout(r, 450));
+        return { moved: Math.round(window.scrollY - y0) };
+      }
+      case 'scrollTo': {
+        const el = marked.get(msg.mark);
+        if (!el?.isConnected) throw new Error(`mark ${msg.mark} is not on the page any more; look again`);
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        await new Promise((r) => setTimeout(r, 450));
+        return true;
+      }
     }
   })().then(
     (data) => reply({ ok: true, data }),

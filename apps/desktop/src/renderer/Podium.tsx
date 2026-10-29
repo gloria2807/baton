@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { cueWav, rms } from '@baton/core/audio';
+import { CardView, Lanes, type Card, type LaneView } from './Cards';
 import { Recorder } from './recorder';
 import { sounds } from './sounds';
 
@@ -9,7 +10,9 @@ type Phase =
   | { kind: 'listening'; since: number }
   | { kind: 'understanding'; seconds: number }
   | { kind: 'heard'; transcript: string; intent: string; ms: number; seconds: number }
-  | { kind: 'notice'; text: string; tone: 'ok' | 'warn' };
+  | { kind: 'notice'; text: string; tone: 'ok' | 'warn' | 'info' };
+
+const toneOf = (t: string): 'ok' | 'warn' | 'info' => (/passed/i.test(t) ? 'ok' : /fail|could not|unavailable|not connected|no baseten/i.test(t) ? 'warn' : 'info');
 
 interface CueUpdate {
   phase: 'saved' | 'heard' | 'error';
@@ -35,8 +38,11 @@ export function Podium() {
   const [talkKey, setTalkKey] = useState('Alt');
   const [talkKeys, setTalkKeys] = useState<Array<{ id: string; label: string }>>([]);
   const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0));
+  const [lanes, setLanes] = useState<LaneView[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
   const recorder = useRef(new Recorder());
   const seconds = useRef(0);
+  const shell = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Build the audio graph now so the talk key only has to open the microphone.
@@ -51,7 +57,15 @@ export function Podium() {
     const offs = [
       window.baton.onExtension((s) => setExtension(s as 'connected' | 'waiting')),
       window.baton.onShowPairing(() => setPanel(true)),
-      window.baton.onNotice((t) => setPhase({ kind: 'notice', text: String(t), tone: String(t).includes('passed') ? 'ok' : 'warn' })),
+      window.baton.onNotice((t) => setPhase({ kind: 'notice', text: String(t), tone: toneOf(String(t)) })),
+      window.baton.onLanes((l) => setLanes(l as LaneView[])),
+      window.baton.onCards((c) => {
+        const next = c as Card[];
+        setCards((prev) => {
+          if (next.some((x) => x.kind !== 'result' && !prev.some((p) => p.id === x.id))) sounds.heard();
+          return next;
+        });
+      }),
       window.baton.onTalkKey((k) => setTalkKey(String(k))),
       window.baton.onPtt((raw) => {
         const e = raw as PttEvent;
@@ -70,7 +84,14 @@ export function Podium() {
     return () => offs.forEach((off) => off());
   }, []);
 
-  useEffect(() => void window.baton.expand(panel), [panel]);
+  // The window follows the content: bar, lane chips, cards, settings panel.
+  useEffect(() => {
+    const el = shell.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => void window.baton.resize(el.scrollHeight + 2));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Live waveform while listening.
   useEffect(() => {
@@ -130,7 +151,7 @@ export function Podium() {
   }
 
   return (
-    <div className="shell">
+    <div className="shell" ref={shell}>
       <div className={`bar phase-${phase.kind}`}>
         <div className="mark" aria-hidden>
           {LANE_COLORS.map((c) => (
@@ -176,6 +197,10 @@ export function Podium() {
           {extension === 'connected' ? 'Chrome' : 'Pair Chrome'}
         </button>
       </div>
+      <Lanes lanes={lanes} />
+      {cards.map((c) => (
+        <CardView key={c.id} card={c} />
+      ))}
       {panel && (
         <div className="panel">
           <div className="row">

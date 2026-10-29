@@ -108,3 +108,47 @@ html, body, #root { margin: 0; height: 100%; background: transparent; overflow: 
 }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn.ghost { background: rgba(255, 255, 255, 0.07); color: var(--text); }
+
+.notice.info { color: var(--text); font-size: 16px; }
+
+/* Lane chips under the bar */
+.lanes {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; border-radius: 18px;
+  background: var(--glass); border: 1px solid var(--glass-edge);
+  animation: rise 0.3s var(--ease);
+}
+.lane { display: grid; grid-template-columns: 10px auto auto 1fr auto; align-items: center; gap: 10px; font-size: 13px; padding: 4px 6px; }
+.lane i, .card-head i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 25%, transparent); }
+.lane.state-running i { animation: breathe 1.4s var(--ease) infinite; }
+.lane-name { font-weight: 700; }
+.lane-state { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.lane.state-waiting-approval .lane-state, .lane.state-waiting-person .lane-state { color: var(--warn); }
+.lane.state-paused-injection .lane-state { color: #fda4af; }
+.lane-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.lane-step { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.btn.small { padding: 5px 12px; font-size: 12px; align-self: flex-end; }
+
+/* Cards that wait for the person */
+.card {
+  -webkit-app-region: no-drag;
+  padding: 16px 20px; border-radius: 20px;
+  background: var(--glass); border: 1px solid var(--glass-edge);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  animation: rise 0.35s var(--ease);
+}
+.card.approval { border-color: rgba(251, 191, 36, 0.45); }
+.card.injection { border-color: rgba(253, 164, 175, 0.5); }
+.card-head { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 8px; }
+.card-label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
+.card.approval .card-label { color: var(--warn); }
+.card.injection .card-label { color: #fda4af; }
+.card-title { font-size: 17px; font-weight: 650; line-height: 1.35; }
+.card-sub { font-size: 13px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+.crop { display: block; max-width: 100%; max-height: 180px; margin-top: 12px; border-radius: 10px; border: 1px solid var(--glass-edge); }
+.findings { margin: 10px 0 4px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.findings li { font-size: 13px; line-height: 1.45; color: #ffe4e6; background: rgba(253, 164, 175, 0.08); border-radius: 10px; padding: 8px 10px; user-select: text; }
+.findings .src { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #fda4af; margin-right: 8px; }
+.card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.card-actions .hint { margin-right: auto; font-size: 12px; color: var(--muted); }
+.card.result.status-done .card-label { color: var(--ok); }

@@ -33,6 +33,7 @@ const api = {
   onCue: on('cue'),
   onNotice: on('podium:notice'),
   onShowPairing: on('podium:showPairing'),
+  onReset: on('podium:reset'),
 };
 
 contextBridge.exposeInMainWorld('baton', api);

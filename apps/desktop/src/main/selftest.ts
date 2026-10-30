@@ -36,7 +36,7 @@ export async function laneSelfTest(bridge: BridgeServer, bounds?: { left: number
   };
 
   try {
-    await step('openLane', () => bridge.request({ op: 'openLane', laneId: 'blue', url: LEDGERLY, color: '#3b82f6', title: 'Blue · Ledgerly', bounds }), () => 'lane window open on Ledgerly');
+    await step('openLane', () => bridge.request({ op: 'openLane', laneId: 'blue', url: LEDGERLY, color: '#4d7bd8', title: 'Blue · Ledgerly', bounds }), () => 'lane window open on Ledgerly');
     await bridge.request({ op: 'setThinking', laneId: 'blue', text: 'Looking for the New bill button' });
     const before = await step('look', () => bridge.request<LookResult>({ op: 'look', laneId: 'blue' }, 20000), (l) => `${l.elements.length} marks on ${l.url}`);
     save('1-before-marks.jpg', before);

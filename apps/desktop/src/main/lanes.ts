@@ -27,7 +27,7 @@ import { imagePart, type Model } from '@baton/model';
 import type OpenAI from 'openai';
 import type { BridgeServer } from './bridge-server';
 import { log } from './log';
-import { repoRoot } from './paths';
+import { receiptsDir } from './paths';
 
 export const PRICE = { inputPerM: 1.25, outputPerM: 4.25 };
 
@@ -105,7 +105,7 @@ export class ModelBrain implements Brain {
 export class FileReceipts implements ReceiptSink {
   readonly dir: string;
   constructor(runId: string, laneId: string, meta: Record<string, unknown>) {
-    this.dir = join(repoRoot, 'receipts', runId, laneId);
+    this.dir = receiptsDir(runId, laneId);
     mkdirSync(this.dir, { recursive: true });
     writeFileSync(join(this.dir, 'lane.json'), JSON.stringify({ ...meta, started: new Date().toISOString() }, null, 2));
   }

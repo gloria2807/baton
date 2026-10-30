@@ -25,4 +25,15 @@ export const sounds = {
     tone(740, 740, 90, 0.045);
     setTimeout(() => tone(990, 990, 140, 0.045), 90);
   },
+  // Lanes start: a low, soft rising pair, like an orchestra standing up.
+  lanesStart: () => {
+    tone(330, 330, 160, 0.04);
+    setTimeout(() => tone(440, 440, 220, 0.04), 120);
+  },
+  // One lane finishes: a single short note.
+  laneDone: () => tone(660, 660, 120, 0.03),
+  // All done: a quiet major chord, the sound people should remember.
+  allDone: () => {
+    [523.25, 659.25, 783.99].forEach((f, i) => setTimeout(() => tone(f, f, 520, 0.035), i * 70));
+  },
 };

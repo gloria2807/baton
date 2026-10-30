@@ -20,3 +20,5 @@ export * from './score/score.js';
 export * from './score/scheduler.js';
 export * from './score/tiling.js';
 export * from './score/merge.js';
+export * from './routine/rehearsal.js';
+export * from './routine/routine.js';

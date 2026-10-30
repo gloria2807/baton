@@ -3,6 +3,9 @@
 
 import OpenAI from 'openai';
 import { z } from 'zod';
+import type { Governor } from './governor.js';
+
+export * from './governor.js';
 
 export const MODEL = 'meta-models/muse-spark-open-1026';
 export const BASE_URL = 'https://inference.baseten.co/v1';
@@ -110,9 +113,19 @@ export type CueHeard = z.infer<typeof CueHeard>;
 export class Model {
   private client: OpenAI;
 
-  constructor(apiKey: string) {
+  // With a governor, every call is counted against the daily budget, limited in concurrency and
+  // retried patiently on rate limits; the SDK's own retries are then turned off.
+  constructor(
+    apiKey: string,
+    readonly governor?: Governor,
+  ) {
     if (!apiKey) throw new Error('BASETEN_API_KEY is not set');
-    this.client = new OpenAI({ baseURL: BASE_URL, apiKey, maxRetries: 2, timeout: 60000 });
+    this.client = new OpenAI({ baseURL: BASE_URL, apiKey, maxRetries: governor ? 0 : 2, timeout: 60000 });
+  }
+
+  private create(params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+    const call = () => this.client.chat.completions.create(params);
+    return this.governor ? this.governor.run(call) : call();
   }
 
   // One JSON answer validated by `schema`. Invalid output is retried once with the error.
@@ -122,7 +135,7 @@ export class Model {
     let lastRaw = '';
     let lastError = '';
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.client.chat.completions.create({
+      const res = await this.create({
         model: MODEL,
         messages: convo,
         max_tokens: maxTokens,
@@ -170,7 +183,7 @@ export class Model {
     let lastError = '';
     const usage = { input: 0, output: 0, reasoning: 0 };
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.client.chat.completions.create({
+      const res = await this.create({
         model: MODEL,
         messages: convo,
         tools,

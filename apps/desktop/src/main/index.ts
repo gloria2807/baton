@@ -2,10 +2,10 @@
 // model client. The Baseten key is read here and never leaves this process.
 
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, powerMonitor, screen, session, Tray } from 'electron';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LookResult, TALK_KEYS, isTalkKeyId, type Anchor, type TalkKeyId } from '@baton/core';
-import { Model } from '@baton/model';
+import { LookResult, RecordedStep, TALK_KEYS, isTalkKeyId, type Anchor, type TalkKeyId } from '@baton/core';
+import { Governor, Model, type SpendState } from '@baton/model';
 import { runBench } from './bench';
 import { runMultiBench } from './bench-multi';
 import { BridgeServer } from './bridge-server';
@@ -13,7 +13,7 @@ import { Conductor, type CardAnswer } from './conductor';
 import { CueSession } from './cue';
 import { openScoreView, registerScoreView, snapshotScoreView } from './score-view';
 import { log } from './log';
-import { loadEnv, loadPairingToken, outDir } from './paths';
+import { dataDir, loadEnv, loadPairingToken, outDir } from './paths';
 import { PushToTalk } from './ptt';
 import { laneSelfTest } from './selftest';
 import { loadProfile, saveProfile } from './profile-store';
@@ -186,7 +186,18 @@ async function handleCue(wav: Uint8Array, seconds: number) {
 app.whenReady().then(async () => {
   loadEnv();
   try {
-    model = new Model(process.env.BASETEN_API_KEY ?? '');
+    // Every call is governed: a daily spending cap (kept across restarts), at most a few calls in
+    // flight, and patient retries on rate limits. The cap defaults to $3 a day.
+    const budget = Number(process.env.BATON_DAILY_BUDGET_USD ?? 3);
+    const spendFile = join(dataDir(), 'spend.json');
+    const governor = new Governor({
+      maxConcurrent: Number(process.env.BATON_MAX_CALLS ?? 3),
+      dailyBudgetUsd: Number.isFinite(budget) && budget > 0 ? budget : 3,
+      load: () => (existsSync(spendFile) ? (JSON.parse(readFileSync(spendFile, 'utf8')) as SpendState) : null),
+      save: (s) => writeFileSync(spendFile, JSON.stringify(s)),
+    });
+    model = new Model(process.env.BASETEN_API_KEY ?? '', governor);
+    log(`model budget: ${governor.spentToday.toFixed(2)} of ${governor.budget.toFixed(2)} spent today`);
   } catch {
     log('BASETEN_API_KEY missing: cues will be recorded but not understood');
   }
@@ -207,6 +218,7 @@ app.whenReady().then(async () => {
   conductor = new Conductor(bridge, () => model, send, () => (profile = loadProfile()));
   bridge.on('laneEvent', (e) => {
     if (e.kind === 'anchor') cueSession?.addChrome(e.cueId, e.anchor);
+    else if (e.kind === 'recorded') conductor.addRehearsalStep(e.step);
   });
 
   ipcMain.handle('podium:init', () => ({ extension: extensionState(), token, hasModel: !!model, talkKey: settings.talkKey, talkKeys: talkKeyOptions(), profile }));
@@ -312,6 +324,15 @@ function handleArgs(argv: string[]) {
     }, 'CUE');
 
   if (argv.includes('--score-view')) void snapshotScoreView(join(__dirname, 'preload.cjs'), join(__dirname, 'renderer', 'index.html'), join(outDir('selftest'), 'score-view.png')).then(() => log('score view snapshot saved'));
+
+  // --rehearsal-file=<json with steps or rehearsals[0].steps>: learn a routine from a saved rehearsal.
+  const rehearsalFile = arg('rehearsal-file');
+  if (rehearsalFile)
+    void (async () => {
+      const raw = JSON.parse(readFileSync(rehearsalFile, 'utf8')) as { steps?: unknown[]; rehearsals?: Array<{ steps: unknown[] }> };
+      const steps = (raw.steps ?? raw.rehearsals?.[0]?.steps ?? []).map((x) => RecordedStep.parse(x));
+      await conductor.learnFrom(steps);
+    })().catch((e) => log(`REHEARSAL failed: ${(e as Error).message}`));
 
   // Pick up a rebuilt extension.
   if (argv.includes('--reload-extension')) void whenPaired(() => bridge.request({ op: 'reloadExtension' }), 'reload-extension');

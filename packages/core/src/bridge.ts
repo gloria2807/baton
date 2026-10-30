@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { Anchor } from './cue/anchor.js';
+import { RecordedStep } from './routine/rehearsal.js';
 import { Rect } from './geometry.js';
 
 export { Rect } from './geometry.js';
@@ -66,6 +67,9 @@ export const Command = z.discriminatedUnion('op', [
   z.object({ op: z.literal('cueEnd'), cueId: z.string().max(64), keep: z.boolean() }),
   // Reload one of the person's tabs (after a lane changed what it shows).
   z.object({ op: z.literal('reloadTab'), tabId: z.number().int() }),
+  // Rehearsal: record what the person does by hand in their own tabs.
+  z.object({ op: z.literal('recordStart') }),
+  z.object({ op: z.literal('recordStop') }),
   // Development: pick up a rebuilt extension without a trip to chrome://extensions.
   z.object({ op: z.literal('reloadExtension') }),
   z.object({ op: z.literal('setThinking'), laneId: LaneId, text: z.string().max(140) }),
@@ -99,6 +103,8 @@ export const LaneEvent = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('log'), message: z.string().max(500) }),
   // The person's pointer rested on something during a cue.
   z.object({ kind: z.literal('anchor'), cueId: z.string().max(64), anchor: Anchor }),
+  // One thing the person did during a rehearsal.
+  z.object({ kind: z.literal('recorded'), step: RecordedStep }),
 ]);
 export type LaneEvent = z.infer<typeof LaneEvent>;
 

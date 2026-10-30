@@ -3,11 +3,24 @@
 // injection warnings, answerable by click or by voice.
 
 import { screen } from 'electron';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { z } from 'zod';
 import { join } from 'node:path';
 import {
   CueMove,
   DEFAULT_LANE_LIMIT,
+  ItemPick,
+  LookResult,
+  Routine,
+  cleanRehearsal,
+  compileMessages,
+  describeStep,
+  itemsMessages,
+  performGoal,
+  pickedItems,
+  routineCommand,
+  variableHints,
+  type RecordedStep,
   MergeReply,
   Score,
   cueMessages,
@@ -22,6 +35,7 @@ import {
   type InjectionFinding,
   type LaneStatus,
   type Part,
+  type PreApproval,
   type PartResult,
   type Profile,
   type Supervisor,
@@ -48,6 +62,10 @@ export type Card =
   | { kind: 'question'; id: number; laneId: string; laneName: string; color: string; question: string }
   | { kind: 'injection'; id: number; laneId: string; laneName: string; color: string; url: string; findings: Array<{ source: string; text: string }> }
   | { kind: 'result'; id: number; laneId: string; laneName: string; color: string; status: string; result: string; detail: string }
+  // Rehearsal: the steps recorded so far, while the person works.
+  | { kind: 'rehearsal'; id: number; laneId: string; laneName: string; color: string; steps: string[]; recording: boolean }
+  // The routine learned from a rehearsal, for the person to check and correct.
+  | { kind: 'routine'; id: number; laneId: string; laneName: string; color: string; routine: Routine }
   // A Score's merged result: one line per lane, and every action still waiting for the person's yes.
   | {
       kind: 'score';
@@ -86,6 +104,19 @@ interface ScoreRunState {
   bundleCard?: number;
   bundleAnswered: boolean;
   spoke: boolean;
+  opts: ScoreOptions;
+  // Screen positions for the lanes running at once; a part takes a free one while it runs.
+  slots: boolean[];
+}
+
+export interface ScoreOptions {
+  limit?: number;
+  // Granted up front for the whole run (performing a routine the person approved as a batch).
+  preApproved?: PreApproval;
+  // Label for a running "n of m done" counter on the Podium.
+  progress?: string;
+  // Close each lane window when its part is done (many short parts share the screen).
+  closeWhenDone?: boolean;
 }
 
 type CardInput = Card extends infer C ? (C extends Card ? Omit<C, 'id'> : never) : never;
@@ -152,7 +183,7 @@ export class Conductor {
   // A spoken cue first answers whatever card is waiting; returns true if it did. A cue that points
   // at things is a new request, not an answer to a lane's question.
   answerByVoice(transcript: string, pointed = false): boolean {
-    const waiting = [...this.cards.values()].find((p) => p.card.kind !== 'result' && !(p.card.kind === 'score' && !p.card.approvals.length));
+    const waiting = [...this.cards.values()].find((p) => !['result', 'rehearsal', 'routine'].includes(p.card.kind) && !(p.card.kind === 'score' && !p.card.approvals.length));
     if (!waiting) return false;
     const yesNo = voiceAnswer(transcript);
     const { card } = waiting;
@@ -260,7 +291,7 @@ export class Conductor {
 
   // ── Scores: several lanes at once ─────────────────────────────────────
 
-  async runScoreCue(score: Score) {
+  async runScoreCue(score: Score, opts: ScoreOptions = {}) {
     const model = this.getModel();
     if (!model || !this.bridge.connected) {
       this.send('podium:notice', model ? 'The Chrome extension is not connected.' : 'No Baseten key: Baton cannot run lanes.');
@@ -272,19 +303,21 @@ export class Conductor {
     }
     this.busy = true;
     const runId = `score-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-    const run: ScoreRunState = { score, runId, startedAt: Date.now(), parts: new Map(), pending: [], bundleAnswered: false, spoke: false };
+    const slots = Array(Math.min(score.parts.length, opts.limit ?? DEFAULT_LANE_LIMIT)).fill(false);
+    const run: ScoreRunState = { score, runId, startedAt: Date.now(), parts: new Map(), pending: [], bundleAnswered: false, spoke: false, opts, slots };
     this.run = run;
     score.parts.forEach((part, i) => {
       const st: PartState = { part, laneId: `${part.id}`.slice(0, 24), color: LANE_COLORS[i % LANE_COLORS.length]!, state: 'waiting', inbox: [], attempt: 1, receipts: [] };
       run.parts.set(part.id, st);
-      this.lanes.set(st.laneId, { laneId: st.laneId, name: part.name, color: st.color, state: 'running', line: 'Waiting to start…', step: 0 });
+      // Many short parts (a performed routine) show a chip only while they run.
+      if (!opts.closeWhenDone) this.lanes.set(st.laneId, { laneId: st.laneId, name: part.name, color: st.color, state: 'running', line: 'Waiting to start…', step: 0 });
     });
     this.publishLanes();
     log(`score ${runId}: ${score.parts.length} parts`);
     this.send('podium:notice', `${score.title}: ${score.parts.length} lanes`);
     try {
       await runScore(score, {
-        limit: DEFAULT_LANE_LIMIT,
+        limit: opts.limit ?? DEFAULT_LANE_LIMIT,
         runPart: (part) => this.runPart(run, part),
         onUpdate: (u) => {
           const st = run.parts.get(u.id);
@@ -293,6 +326,10 @@ export class Conductor {
             st.state = 'settled';
             st.result = { status: u.status, result: u.result, data: u.data, ms: u.ms };
           } else if (u.state === 'running') st.state = 'running';
+          if (opts.progress && u.state === 'settled') {
+            const done = [...run.parts.values()].filter((p) => p.state === 'settled').length;
+            this.send('podium:notice', `${opts.progress}: ${done} of ${run.parts.size} done`);
+          }
           this.refreshBundle(run);
           void this.checkApprovalPoint(run);
         },
@@ -312,9 +349,14 @@ export class Conductor {
   private async runPart(run: ScoreRunState, part: Part): Promise<PartResult> {
     const model = this.getModel()!;
     const st = run.parts.get(part.id)!;
-    const index = [...run.parts.keys()].indexOf(part.id);
     const { workArea } = screen.getPrimaryDisplay();
-    const bounds = tile(run.parts.size, workArea, 110)[index];
+    const slot = Math.max(0, run.slots.indexOf(false));
+    run.slots[slot] = true;
+    if (!this.lanes.has(st.laneId)) {
+      this.lanes.set(st.laneId, { laneId: st.laneId, name: part.name, color: st.color, state: 'running', line: 'Starting…', step: 0 });
+      this.publishLanes();
+    }
+    const bounds = tile(run.slots.length, workArea, 110)[slot];
     let goal = part.goal;
     for (;;) {
       st.state = 'running';
@@ -323,7 +365,7 @@ export class Conductor {
         laneId: st.laneId,
         name: part.name,
         color: st.color,
-        spec: { goal, startUrl: part.startUrl },
+        spec: { goal, startUrl: part.startUrl, preApproved: run.opts.preApproved },
         bounds,
         keepOpen: true,
         reuseWindow: st.attempt > 1,
@@ -336,6 +378,12 @@ export class Conductor {
         st.redirect = undefined;
         st.attempt++;
         continue;
+      }
+      run.slots[slot] = false;
+      if (run.opts.closeWhenDone) {
+        await this.bridge.request({ op: 'closeLane', laneId: st.laneId }).catch(() => undefined);
+        this.lanes.delete(st.laneId);
+        this.publishLanes();
       }
       return { status: out.status, result: out.result, data: out.data, ms: out.ms };
     }
@@ -434,6 +482,154 @@ export class Conductor {
     log(`score ${run.runId} finished in ${record.seconds} s`);
   }
 
+  // ── Rehearse, then perform ─────────────────────────────────────────────
+
+  private rehearsal: { startedAt: number; steps: RecordedStep[]; cardId: number } | null = null;
+  // The last routine learned, kept across restarts.
+  private routine: (Routine & { doneUrls: string[] }) | null = (() => {
+    try {
+      const raw = JSON.parse(readFileSync(join(outDir('routines'), 'latest.json'), 'utf8')) as { doneUrls?: string[] };
+      return { ...Routine.parse(raw), doneUrls: raw.doneUrls ?? [] };
+    } catch {
+      return null;
+    }
+  })();
+
+  async startRehearsal() {
+    if (this.busy || this.rehearsal) {
+      this.send('podium:notice', this.rehearsal ? 'Already watching.' : 'Lanes are running. Say “everyone stop” first.');
+      return;
+    }
+    if (!this.bridge.connected) {
+      this.send('podium:notice', 'The Chrome extension is not connected.');
+      return;
+    }
+    await this.bridge.request({ op: 'recordStart' });
+    const answer = this.show({ kind: 'rehearsal', laneId: 'rehearsal', laneName: 'Watching you', color: '#ef4444', steps: [], recording: true });
+    this.rehearsal = { startedAt: Date.now(), steps: [], cardId: this.nextCard - 1 };
+    log('rehearsal started');
+    this.send('speak', 'Watching. Do it once, and tell me what matters as you go. Say “that’s it” when you are done.');
+    // The card's Finish button ends the rehearsal too.
+    void answer.then((a) => {
+      if ('choice' in a && a.choice === 'stop' && this.rehearsal) void this.finishRehearsal();
+    });
+  }
+
+  addRehearsalStep(step: RecordedStep) {
+    const r = this.rehearsal;
+    if (!r) return;
+    r.steps.push(step);
+    this.patchCard(r.cardId, { steps: cleanRehearsal(r.steps).map(describeStep) });
+  }
+
+  // Development: learn a routine from a saved rehearsal, as if it had just been recorded.
+  async learnFrom(steps: RecordedStep[]) {
+    this.rehearsal = { startedAt: Date.now(), steps, cardId: -1 };
+    await this.finishRehearsal();
+  }
+
+  private async finishRehearsal() {
+    const r = this.rehearsal;
+    if (!r) return;
+    this.rehearsal = null;
+    await this.bridge.request({ op: 'recordStop' }).catch(() => undefined);
+    if (this.cards.has(r.cardId)) this.answer(r.cardId, { choice: 'dismiss' });
+    const steps = cleanRehearsal(r.steps);
+    writeFileSync(join(outDir('rehearsals'), `rehearsal-${new Date(r.startedAt).toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify({ steps: r.steps }, null, 2));
+    log(`rehearsal finished: ${r.steps.length} recorded, ${steps.length} after cleaning`);
+    if (!steps.some((s) => s.type === 'input' || s.type === 'paste' || s.type === 'click')) {
+      this.send('speak', 'I did not see you do anything in Chrome. Say “watch me” to try again.');
+      return;
+    }
+    this.send('podium:notice', 'Learning the routine…');
+    try {
+      const out = await this.getModel()!.json(Routine, toOpenAI(compileMessages(steps, variableHints(steps))), 'low');
+      // Items handled during the rehearsal are done: never do them twice.
+      const doneUrls = [...new Set(steps.filter((s) => s.type === 'navigate' && s.url !== out.value.itemSourceUrl).map((s) => (s as { url: string }).url))];
+      this.routine = { ...out.value, doneUrls };
+      writeFileSync(join(outDir('routines'), 'latest.json'), JSON.stringify(this.routine, null, 2));
+      log(`routine compiled: ${out.value.name} (${out.value.variables.length} variables, ${out.value.steps.length} steps, ${Math.round(out.ms)} ms)`);
+      this.send('speak', `Got it: ${out.value.name}. Say “now do the rest” when you are ready.`);
+      const edit = await this.show({ kind: 'routine', laneId: 'routine', laneName: 'Routine', color: '#ef4444', routine: this.routine });
+      if ('text' in edit) this.applyRoutineEdits(edit.text);
+    } catch (e) {
+      this.send('podium:notice', `Could not learn the routine: ${(e as Error).message}`);
+    }
+  }
+
+  // The person renamed or corrected variables on the Routine card.
+  private applyRoutineEdits(json: string) {
+    if (!this.routine) return;
+    try {
+      const edits = z.array(z.object({ index: z.number().int(), name: z.string(), description: z.string() })).parse(JSON.parse(json));
+      const variables = this.routine.variables.map((v, i) => {
+        const e = edits.find((x) => x.index === i);
+        return e ? { ...v, name: e.name, description: e.description } : v;
+      });
+      // Renamed variables are renamed in the steps too.
+      const renames = this.routine.variables.map((v, i) => [v.name, variables[i]!.name] as const).filter(([a, b]) => a !== b);
+      const steps = this.routine.steps.map((s) => ({ ...s, do: renames.reduce((t, [a, b]) => t.split(`{${a}}`).join(`{${b}}`), s.do) }));
+      this.routine = { ...Routine.parse({ ...this.routine, variables, steps }), doneUrls: this.routine.doneUrls };
+      writeFileSync(join(outDir('routines'), 'latest.json'), JSON.stringify(this.routine, null, 2));
+      log('routine corrected by the person');
+    } catch (e) {
+      this.send('podium:notice', `Could not apply that change: ${(e as Error).message}`);
+    }
+  }
+
+  async performRoutine(anchors: Anchor[]) {
+    const routine = this.routine;
+    const model = this.getModel();
+    if (!routine || !model) {
+      this.send('speak', 'Show me first: say “watch me” and do one by hand.');
+      return;
+    }
+    if (this.busy) {
+      this.send('podium:notice', 'Lanes are already running.');
+      return;
+    }
+    // The list the person points at, or the one they picked the rehearsed item from.
+    const pointed = anchors.find((a) => a.source === 'chrome' && a.url && !a.laneId)?.url;
+    const source = pointed ?? routine.itemSourceUrl;
+    this.send('podium:notice', 'Finding the rest…');
+    let links: Array<{ name: string; href: string }>;
+    try {
+      await this.bridge.request({ op: 'openLane', laneId: 'finder', url: source, color: '#ef4444', title: 'Finding the items', bounds: this.laneBounds() }, 30000);
+      const look = LookResult.parse(await this.bridge.request({ op: 'look', laneId: 'finder', screenshot: false }, 30000));
+      links = look.elements.filter((e) => e.href && e.name).map((e) => ({ name: e.name, href: e.href! }));
+    } finally {
+      await this.bridge.request({ op: 'closeLane', laneId: 'finder' }).catch(() => undefined);
+    }
+    const picked = await model.json(ItemPick, toOpenAI(itemsMessages(routine, links, routine.doneUrls)), 'low');
+    // Only real links from the page, never one already done, each once.
+    const items = pickedItems(picked.value, links, routine.doneUrls);
+    log(`perform: ${links.length} links on ${source}, model picked ${picked.value.numbers.length}, ${items.length} kept`);
+    if (!items.length) {
+      this.send('speak', 'I could not find any more items to do.');
+      return;
+    }
+    log(`perform ${routine.name}: ${items.length} items`);
+    // One approval for the whole batch: the saves the routine makes, on the sites it makes them.
+    const hosts = [...new Set(routine.steps.map((s) => s.page).filter((p): p is string => !!p).map((p) => new URL(p).host).filter((h) => h !== new URL(source).host))];
+    this.send('speak', `I found ${items.length} more. Shall I do them all?`);
+    const a = await this.show({
+      kind: 'approval',
+      laneId: 'routine',
+      laneName: routine.name,
+      color: '#ef4444',
+      summary: `Perform “${routine.name}” for ${items.length} ${routine.itemKind}s`,
+      reason: `Each saves one entry${hosts.length ? ` on ${hosts.join(', ')}` : ''}. Payments, sending and deleting still ask you one by one.`,
+    });
+    if (!('choice' in a) || a.choice !== 'approve') return;
+    const score = Score.parse({
+      title: routine.name,
+      final: `Say how many ${routine.itemKind}s were done, how many were already done, and any that failed.`,
+      parts: items.map((it, i) => ({ id: `i${i + 1}`, name: `#${i + 1}`, goal: performGoal(routine, it), startUrl: it.url, manualMinutes: 1.5 })),
+    });
+    // Four at a time: fast enough to watch, gentle on the model's rate limit and the budget.
+    await this.runScoreCue(score, { limit: 4, preApproved: hosts.length ? { categories: ['submit'], hosts } : undefined, progress: `Performing “${routine.name}”`, closeWhenDone: true });
+  }
+
   // Pointing at a lane window and speaking changes only that lane.
   redirect(laneId: string, said: string): boolean {
     const run = this.run;
@@ -466,6 +662,15 @@ export class Conductor {
       this.stopAll();
       return;
     }
+    // Rehearsing: what the person says is narration, until they say they are done.
+    const command = routineCommand(cue.transcript);
+    if (this.rehearsal) {
+      if (command === 'finish') await this.finishRehearsal();
+      else this.addRehearsalStep({ type: 'narration', at: Date.now() - this.rehearsal.startedAt, text: cue.transcript.slice(0, 1000) });
+      return;
+    }
+    if (command === 'rehearse') return this.startRehearsal();
+    if (command === 'perform') return this.performRoutine(cue.anchors);
     // Pointing at a lane window while lanes run: the words are for that lane alone.
     const atLane = cue.anchors.find((a) => a.laneId);
     if (atLane?.laneId && this.redirect(atLane.laneId, cue.transcript)) return;
@@ -512,6 +717,14 @@ export class Conductor {
     }
     if (move.kind === 'task') {
       await this.runOne({ name: move.name, goal: move.goal, startUrl: move.startUrl });
+      return;
+    }
+    if (move.kind === 'rehearse') {
+      await this.startRehearsal();
+      return;
+    }
+    if (move.kind === 'perform') {
+      await this.performRoutine(anchors);
       return;
     }
     // Transfer: the data comes straight from the anchor, so nothing is retyped by a model.

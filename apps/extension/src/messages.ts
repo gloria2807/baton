@@ -1,6 +1,7 @@
 // Messages between the service worker and the content script inside a lane tab.
 
 import type { Element } from '@baton/core/bridge';
+import type { RestReport } from './pointer';
 
 export interface LaneInfo {
   laneId: string;
@@ -21,9 +22,11 @@ export type ToContent =
   | { kind: 'setDate'; mark: number; iso: string }
   | { kind: 'scrollTo'; mark: number }
   | { kind: 'scrollBy'; dy: number }
+  | { kind: 'cue'; active: boolean; cueId?: string; keep?: boolean }
+  | { kind: 'fillCells'; mark: number; rows: string[][] }
   | { kind: 'cursorVisible'; visible: boolean };
 
-export type ToWorker = { kind: 'whoami' };
+export type ToWorker = { kind: 'whoami' } | RestReport;
 
 export interface CollectResult {
   url: string;

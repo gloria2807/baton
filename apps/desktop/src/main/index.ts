@@ -4,15 +4,17 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, powerMonitor, screen, session, Tray } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LookResult, TALK_KEYS, isTalkKeyId, type TalkKeyId } from '@baton/core';
+import { LookResult, TALK_KEYS, isTalkKeyId, type Anchor, type TalkKeyId } from '@baton/core';
 import { Model } from '@baton/model';
 import { runBench } from './bench';
 import { BridgeServer } from './bridge-server';
 import { Conductor, type CardAnswer } from './conductor';
+import { CueSession } from './cue';
 import { log } from './log';
 import { loadEnv, loadPairingToken, outDir } from './paths';
 import { PushToTalk } from './ptt';
 import { laneSelfTest } from './selftest';
+import { loadProfile, saveProfile } from './profile-store';
 import { loadSettings, saveSettings } from './settings';
 
 export type ExtensionState = 'connected' | 'waiting';
@@ -34,6 +36,10 @@ let tray: Tray | null = null;
 let bridge: BridgeServer;
 let model: Model | null = null;
 let conductor: Conductor;
+let profile = loadProfile();
+// The cue being spoken now, and the one whose audio is on its way to the model.
+let cueSession: CueSession | null = null;
+let spokenCue: { id: string; heldMs: number; anchors: Promise<Anchor[]> } | null = null;
 const token = loadPairingToken();
 const settings = loadSettings();
 const ptt = new PushToTalk(settings.talkKey);
@@ -159,8 +165,12 @@ async function handleCue(wav: Uint8Array, seconds: number) {
     log(`cue heard in ${Math.round(r.ms)} ms`);
     send('cue', { phase: 'heard', transcript: r.value.transcript, intent: r.value.intent, ms: Math.round(r.ms), file } satisfies CueUpdate);
     const said = r.value.transcript.trim();
-    // A waiting card (approval, question) takes the answer; otherwise the cue starts a lane.
-    if (said && !conductor.answerByVoice(said)) void conductor.fromCue(said);
+    const cue = spokenCue;
+    spokenCue = null;
+    // A waiting card (approval, question) takes the answer; otherwise the cue is interpreted.
+    const anchors = cue ? await cue.anchors : [];
+    if (said && !conductor.answerByVoice(said, anchors.length > 0))
+      void conductor.fromCue({ id: cue?.id ?? `cue-${Date.now().toString(36)}`, transcript: said, intent: r.value.intent, anchors, heldMs: cue?.heldMs ?? seconds * 1000 });
   } catch (e) {
     send('cue', { phase: 'error', error: (e as Error).message, file } satisfies CueUpdate);
   }
@@ -186,9 +196,13 @@ app.whenReady().then(async () => {
   }
   bridge.on('paired', () => send('extension', 'connected' satisfies ExtensionState));
   bridge.on('unpaired', () => send('extension', 'waiting' satisfies ExtensionState));
-  conductor = new Conductor(bridge, () => model, send);
+  conductor = new Conductor(bridge, () => model, send, () => profile);
+  bridge.on('laneEvent', (e) => {
+    if (e.kind === 'anchor') cueSession?.addChrome(e.cueId, e.anchor);
+  });
 
-  ipcMain.handle('podium:init', () => ({ extension: extensionState(), token, hasModel: !!model, talkKey: settings.talkKey, talkKeys: talkKeyOptions() }));
+  ipcMain.handle('podium:init', () => ({ extension: extensionState(), token, hasModel: !!model, talkKey: settings.talkKey, talkKeys: talkKeyOptions(), profile }));
+  ipcMain.handle('profile:save', (_e, p: unknown) => (profile = saveProfile(p)));
   ipcMain.handle('settings:talkKey', (_e, key: unknown) => {
     if (isTalkKeyId(key)) setTalkKey(key);
     return settings.talkKey;
@@ -214,7 +228,19 @@ app.whenReady().then(async () => {
   createPodium();
   createTray();
 
-  ptt.on('ptt', (e) => send('ptt', e));
+  ptt.on('ptt', (e) => {
+    send('ptt', e);
+    // Anchors are collected while the key is held; they travel with the cue's audio.
+    if (e.type === 'start') {
+      cueSession = new CueSession(bridge, () => podium, (list) => send('anchors', list));
+      send('anchors', []);
+    } else if (cueSession) {
+      const s = cueSession;
+      cueSession = null;
+      if (e.type === 'commit') spokenCue = { id: s.id, heldMs: e.heldMs, anchors: s.end(true) };
+      else void s.end(false).then(() => send('anchors', []));
+    }
+  });
   try {
     ptt.start();
   } catch (e) {

@@ -37,6 +37,7 @@ export interface Hands {
   click(mark: number): Promise<void>;
   type(mark: number, text: string, submit: boolean): Promise<void>;
   select(mark: number, option: string): Promise<void>;
+  fillCells(mark: number, rows: string[][]): Promise<void>;
   scroll(by: { dy: number } | { mark: number }): Promise<void>;
   back(): Promise<void>;
   thinking(text: string): Promise<void>;
@@ -118,6 +119,8 @@ const describe = (a: Action, el?: Element): string => {
       return `type “${a.text.slice(0, 60)}” into${target}${a.submit ? ' + Enter' : ''}`;
     case 'select':
       return `select “${a.option}” in${target}`;
+    case 'fill_cells':
+      return `fill_cells ${a.rows.length} rows from${target}`;
     case 'scroll':
       return a.mark ? `scroll to${target}` : `scroll ${a.direction ?? 'down'}`;
     case 'read':
@@ -337,6 +340,9 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
           break;
         case 'select':
           await hands.select(action.mark, action.option);
+          break;
+        case 'fill_cells':
+          await hands.fillCells(action.mark, action.rows);
           break;
         case 'scroll':
           await hands.scroll(action.mark ? { mark: action.mark } : { dy: (action.direction === 'up' ? -1 : 1) * Math.round(look.viewport.height * 0.8) });

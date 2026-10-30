@@ -4,6 +4,7 @@
 import { blockedFieldMessage, blockedFieldReason } from '@baton/core/safety/fields';
 import type { Element } from '@baton/core/bridge';
 import type { CollectResult, LaneInfo, TargetResult, ToContent } from './messages';
+import { onCue } from './pointer';
 
 let lane: LaneInfo | null = null;
 let host: HTMLElement | null = null;
@@ -352,6 +353,39 @@ async function target(msg: Extract<ToContent, { kind: 'target' }>): Promise<Targ
   };
 }
 
+// Enter a block of rows into a grid of fields, starting at a cell and filling right and down.
+// Values are set the way a paste would set them; blocked fields are refused.
+async function fillCells(mark: number, rows: string[][]): Promise<number> {
+  const start = marked.get(mark);
+  const cell = start?.closest('td,th') as HTMLTableCellElement | null;
+  const table = start?.closest('table');
+  if (!start || !cell || !table) throw new Error(`mark ${mark} is not a cell in a table`);
+  const r0 = (cell.parentElement as HTMLTableRowElement).rowIndex;
+  const c0 = cell.cellIndex;
+  const setValue = (el: HTMLInputElement | HTMLTextAreaElement, v: string) => {
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  let filled = 0;
+  for (const [i, row] of rows.entries()) {
+    const tr = table.rows[r0 + i];
+    if (!tr) throw new Error(`the sheet has only ${table.rows.length - r0} rows from this cell; ${rows.length} were needed`);
+    for (const [j, value] of row.entries()) {
+      const field = tr.cells[c0 + j]?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:not([type=hidden]),textarea');
+      if (!field) throw new Error(`no field at row ${i + 1}, column ${j + 1} of the block`);
+      if (blockedReason(field)) throw new Error('blocked field: Baton never types into password or payment fields');
+      setValue(field, value);
+      filled++;
+    }
+    // Rows land one after another so the eye can follow them.
+    tr.animate([{ backgroundColor: 'rgba(139,155,255,.35)' }, { backgroundColor: 'transparent' }], { duration: 700 });
+    await new Promise((r) => setTimeout(r, 70));
+  }
+  return filled;
+}
+
 // Date inputs ignore inserted text; set the ISO value the way a picker would.
 function setDate(mark: number, iso: string): string {
   const el = marked.get(mark);
@@ -393,6 +427,11 @@ chrome.runtime.onMessage.addListener((msg: ToContent, _sender, reply) => {
         return chooseOption(msg.mark, msg.option);
       case 'setDate':
         return setDate(msg.mark, msg.iso);
+      case 'cue':
+        onCue(msg);
+        return true;
+      case 'fillCells':
+        return fillCells(msg.mark, msg.rows);
       case 'scrollBy': {
         const y0 = window.scrollY;
         window.scrollBy({ top: msg.dy, behavior: document.visibilityState === 'visible' ? 'smooth' : 'instant' });

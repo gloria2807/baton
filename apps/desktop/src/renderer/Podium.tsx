@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { cueWav, rms } from '@baton/core/audio';
 import { CardView, Lanes, type Card, type LaneView } from './Cards';
+import { ProfileForm } from './Profile';
 import { Recorder } from './recorder';
+import { hush, speak } from './speech';
 import { sounds } from './sounds';
 
 type Phase =
@@ -40,6 +42,8 @@ export function Podium() {
   const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0));
   const [lanes, setLanes] = useState<LaneView[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
+  const [anchors, setAnchors] = useState<Array<{ n: number; label: string; source: string }>>([]);
+  const [profile, setProfile] = useState<Record<string, string> | null>(null);
   const recorder = useRef(new Recorder());
   const seconds = useRef(0);
   const shell = useRef<HTMLDivElement>(null);
@@ -53,12 +57,15 @@ export function Podium() {
       setHasModel(s.hasModel);
       setTalkKey(s.talkKey);
       setTalkKeys(s.talkKeys);
+      setProfile(s.profile);
     });
     const offs = [
       window.baton.onExtension((s) => setExtension(s as 'connected' | 'waiting')),
       window.baton.onShowPairing(() => setPanel(true)),
       window.baton.onNotice((t) => setPhase({ kind: 'notice', text: String(t), tone: toneOf(String(t)) })),
       window.baton.onLanes((l) => setLanes(l as LaneView[])),
+      window.baton.onAnchors((a) => setAnchors(a as Array<{ n: number; label: string; source: string }>)),
+      window.baton.onSpeak((t) => speak(String(t))),
       window.baton.onCards((c) => {
         const next = c as Card[];
         setCards((prev) => {
@@ -106,6 +113,7 @@ export function Podium() {
   }, [phase.kind]);
 
   async function begin() {
+    hush(); // pressing the key while Baton talks stops it
     setLevels(Array(BARS).fill(0));
     setPhase({ kind: 'opening' });
     try {
@@ -197,6 +205,16 @@ export function Podium() {
           {extension === 'connected' ? 'Chrome' : 'Pair Chrome'}
         </button>
       </div>
+      {anchors.length > 0 && (
+        <div className="anchors">
+          {anchors.map((a) => (
+            <span key={a.n} className={`anchor ${a.source}`}>
+              <b>{a.n}</b>
+              {a.label}
+            </span>
+          ))}
+        </div>
+      )}
       <Lanes lanes={lanes} />
       {cards.map((c) => (
         <CardView key={c.id} card={c} />
@@ -224,6 +242,7 @@ export function Podium() {
               ))}
             </select>
           </div>
+          {profile && <ProfileForm initial={profile} />}
           <ol>
             <li>In Chrome, open the Baton extension’s options.</li>
             <li>Paste this token and press Save.</li>

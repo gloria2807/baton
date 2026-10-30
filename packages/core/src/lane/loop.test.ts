@@ -34,6 +34,11 @@ const PAGES: Record<string, { title: string; text: string; els: FakeEl[] }> = {
     els: [{ tag: 'a', role: 'link', name: 'Home', goto: '/' }],
   },
   '/long': { title: 'Long', text: 'Long page', els: [] },
+  '/sheet': {
+    title: 'Import sheet',
+    text: 'Import sheet',
+    els: ['A1', 'B1', 'A2', 'B2'].map((c) => ({ tag: 'input', role: 'textbox', name: `Cell ${c}`, value: '' })),
+  },
 };
 
 class FakeHands implements Hands {
@@ -76,6 +81,11 @@ class FakeHands implements Hands {
     this.values.set(`${this.path}|${el.name}`, text);
   }
   async select() {}
+  async fillCells(mark: number, rows: string[][]) {
+    this.calls.push(`fill ${mark} ${rows.length}x${rows[0]!.length}`);
+    const els = this.els();
+    rows.forEach((r, i) => r.forEach((v, j) => this.values.set(`${this.path}|${els[mark - 1 + i * 2 + j]!.name}`, v)));
+  }
   async scroll(by: { dy: number } | { mark: number }) {
     this.calls.push('scroll');
     if (this.path === '/long' && 'dy' in by) this.scrollY += by.dy;
@@ -320,5 +330,23 @@ describe('lane loop: scroll to an element', () => {
     const brain = new FakeBrain([{ action: { tool: 'scroll', mark: 1 } }, { action: { tool: 'finish', result: 'ok' } }]);
     const { receipts } = await run({ goal: 'g' }, new FakeHands(), brain, new FakePerson());
     expect(receipts.steps[0]!.verdict).toEqual({ ok: true, note: '“+ New bill” is in view' });
+  });
+});
+
+describe('lane loop: fill_cells', () => {
+  it('enters a block of rows in one step and verifies every value', async () => {
+    const hands = new FakeHands('/sheet');
+    const brain = new FakeBrain([
+      { action: { tool: 'fill_cells', mark: 1, rows: [['Dec 2', 'Opening'], ['Dec 3', 'Async']] } },
+      { action: { tool: 'finish', result: 'filled' } },
+    ]);
+    const { receipts } = await run({ goal: 'g' }, hands, brain, new FakePerson());
+    expect(hands.calls).toEqual(['fill 1 2x2']);
+    expect(receipts.steps[0]!.verdict).toEqual({ ok: true, note: '4 cells filled' });
+  });
+
+  it('accepts rows as tab-separated text', async () => {
+    const { StepDecision } = await import('./actions.js');
+    expect(StepDecision.parse({ thinking: 't', action: { tool: 'fill_cells', mark: 1, rows: 'a\tb\nc\td\n' } }).action).toEqual({ tool: 'fill_cells', mark: 1, rows: [['a', 'b'], ['c', 'd']] });
   });
 });

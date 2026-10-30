@@ -3,6 +3,11 @@
 import { z } from 'zod';
 
 const mark = z.coerce.number().int().positive();
+// Rows as arrays of cells, or as text with one row per line and tab-separated cells.
+const Rows = z.preprocess(
+  (v) => (typeof v === 'string' ? v.split(/\r?\n/).filter((l) => l.trim()).map((l) => l.split('\t')) : v),
+  z.array(z.array(z.coerce.string().max(500)).min(1).max(20)).min(1).max(60),
+);
 const shortText = (max: number) => z.string().transform((s) => s.replace(/\s+/g, ' ').trim().slice(0, max));
 
 export const Action = z.discriminatedUnion('tool', [
@@ -11,6 +16,8 @@ export const Action = z.discriminatedUnion('tool', [
   z.object({ tool: z.literal('click'), mark }),
   z.object({ tool: z.literal('type'), mark, text: z.coerce.string().max(2000), submit: z.boolean().default(false) }),
   z.object({ tool: z.literal('select'), mark, option: z.coerce.string().min(1).max(200) }),
+  // Enter a block of rows into a grid of fields (a sheet), starting at the cell `mark`.
+  z.object({ tool: z.literal('fill_cells'), mark, rows: Rows }),
   z.object({ tool: z.literal('scroll'), direction: z.enum(['up', 'down']).optional(), mark: mark.optional() }),
   // Pull facts from the page into the lane's notes, e.g. "the price and airline of the top 3 results".
   z.object({ tool: z.literal('read'), what: z.string().min(1).max(300) }),
@@ -79,6 +86,11 @@ const TOOL_PARAMS: Record<Tool, { description: string; properties: Record<string
     required: ['mark', 'text'],
   },
   select: { description: 'Choose an option in a dropdown by its text.', properties: { mark: int('Mark number of the dropdown'), option: str('Option text') }, required: ['mark', 'option'] },
+  fill_cells: {
+    description: 'Enter a block of rows into a grid of fields (a sheet or table of inputs) in one step, starting at the cell given by mark and filling right and down.',
+    properties: { mark: int('Mark number of the top-left cell to fill'), rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'Rows of cell values' } },
+    required: ['mark', 'rows'],
+  },
   scroll: { description: 'Scroll the page, or bring an element into view.', properties: { direction: { type: 'string', enum: ['up', 'down'] }, mark: int('Element to scroll to') }, required: [] },
   read: { description: 'Note facts from the page text into the lane notes.', properties: { what: str('What to note, e.g. "price and time of the first 3 flights"') }, required: ['what'] },
   extract_list: {
@@ -125,6 +137,7 @@ export const TOOL_GUIDE = `Tools (pick exactly one per step):
 - {"tool":"click","mark":number} click a numbered element.
 - {"tool":"type","mark":number,"text":string,"submit":boolean} replace a field's text; submit presses Enter.
 - {"tool":"select","mark":number,"option":string} choose an option in a dropdown by its text.
+- {"tool":"fill_cells","mark":number,"rows":string[][]} enter many rows into a sheet at once, starting at the top-left cell mark.
 - {"tool":"scroll","direction":"down"|"up"} or {"tool":"scroll","mark":number} scroll the page or bring an element into view.
 - {"tool":"read","what":string} note facts from the page text, e.g. "the price and time of the first 3 flights".
 - {"tool":"extract_list","item":string,"fields":string[],"max":number} copy a list from the page as structured rows.

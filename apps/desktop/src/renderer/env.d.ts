@@ -6,6 +6,7 @@ export interface PodiumInit {
   hasModel: boolean;
   talkKey: string;
   talkKeys: Array<{ id: string; label: string }>;
+  profile: Record<string, string>;
 }
 
 declare global {

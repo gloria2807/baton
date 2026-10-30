@@ -191,6 +191,11 @@ Both produced sensible parallel parts with empty `dependsOn` for independent wor
 - The model sometimes sends numbers where text is expected (`"text": 200`); text arguments are coerced to strings.
 - Extraction calls (`read`, `extract_list`) and planning stay on JSON-in-prompt; they have not shown the problem.
 
+### Cues with pointing (measured in Stage 3)
+
+- Interpreting a cue (transcript + anchors + profile → answer, task, transfer or clarify) takes 1.6–7 s at `low`, on top of 4.6–6 s to transcribe.
+- Real speech is sometimes transcribed badly: "Put this there" once came back as "Yeah", and once as an unrelated sentence. Because the anchors carry the meaning, the interpreter still chose the right transfer. Prefer moves that the anchors make unambiguous, and keep transcripts visible on the Podium so the person can see what was heard.
+
 ### Streaming
 
 - `stream: true` works. Reasoning streams in `delta.reasoning_content`, then the answer in `delta.content`.

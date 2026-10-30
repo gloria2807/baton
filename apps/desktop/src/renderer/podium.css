@@ -152,3 +152,16 @@ html, body, #root { margin: 0; height: 100%; background: transparent; overflow: 
 .card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; }
 .card-actions .hint { margin-right: auto; font-size: 12px; color: var(--muted); }
 .card.result.status-done .card-label { color: var(--ok); }
+
+/* Anchors captured while speaking */
+.anchors { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 6px; animation: rise 0.3s var(--ease); }
+.anchor { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 12px 6px 6px; border-radius: 999px; font-size: 12px; background: var(--glass); border: 1px solid var(--glass-edge); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.anchor b { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; color: #fff; background: linear-gradient(135deg, #8b9bff, #6d5cff); flex: none; }
+.anchor.desktop b { background: linear-gradient(135deg, #94a3b8, #64748b); }
+
+/* Profile */
+.profile { margin-top: 14px; }
+.profile .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 8px 0; }
+.profile label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.profile input { font: 13px inherit; font-family: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-edge); border-radius: 8px; padding: 7px 10px; }
+.profile input:focus { outline: 2px solid var(--accent); outline-offset: 0; }

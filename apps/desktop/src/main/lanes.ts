@@ -86,7 +86,11 @@ export class ModelBrain implements Brain {
   // Lane steps use the model's native tool calling, which it follows far more reliably than a
   // JSON format described in the prompt (see the model contract in docs/SPEC.md).
   async decide(messages: LaneMessage[]): Promise<BrainReply<StepDecision>> {
-    const r = await this.model.toolStep(StepDecision, toOpenAI(messages), LANE_TOOLS as OpenAI.Chat.Completions.ChatCompletionTool[], decisionFromToolCall, 'low');
+    const r = await this.model.toolStep(StepDecision, toOpenAI(messages), LANE_TOOLS as OpenAI.Chat.Completions.ChatCompletionTool[], decisionFromToolCall, 'low', (text) => ({
+      thinking: 'Reporting what I found',
+      reason: 'The model answered in prose instead of calling a tool; its answer is taken as the result.',
+      action: { tool: 'finish', result: text },
+    }));
     return { value: r.value, reasoning: r.reasoning, ms: r.ms, usage: r.usage && { input: r.usage.input, output: r.usage.output } };
   }
   read(messages: LaneMessage[]) {
@@ -140,14 +144,18 @@ export interface LaneLaunch {
   spec: LaneSpec & { startUrl: string };
   bounds?: { left: number; top: number; width: number; height: number };
   keepOpen?: boolean;
+  // A redirected lane carries on in the window it already has, from the page it is on.
+  reuseWindow?: boolean;
+  attempt?: number;
 }
 
 export async function launchLane(bridge: BridgeServer, model: Model, supervisor: Supervisor, launch: LaneLaunch): Promise<LaneOutcome & { receipts: string }> {
   // A lane never types passwords or card numbers, so it never needs them: mask them before anything sees the goal.
   const l = { ...launch, spec: { ...launch.spec, goal: redactSecrets(launch.spec.goal) } };
-  const receipts = new FileReceipts(l.runId, l.laneId, { name: l.name, color: l.color, goal: l.spec.goal, startUrl: l.spec.startUrl });
-  log(`lane ${l.laneId} starting (${l.name})`);
-  await bridge.request({ op: 'openLane', laneId: l.laneId, url: l.spec.startUrl, color: l.color, title: l.name, bounds: l.bounds }, 30000);
+  const dir = l.attempt && l.attempt > 1 ? `${l.laneId}-${l.attempt}` : l.laneId;
+  const receipts = new FileReceipts(l.runId, dir, { name: l.name, color: l.color, goal: l.spec.goal, startUrl: l.spec.startUrl, attempt: l.attempt ?? 1 });
+  log(`lane ${l.laneId} ${l.reuseWindow ? 'continuing' : 'starting'} (${l.name})`);
+  if (!l.reuseWindow) await bridge.request({ op: 'openLane', laneId: l.laneId, url: l.spec.startUrl, color: l.color, title: l.name, bounds: l.bounds }, 30000);
   const hands = new BridgeHands(bridge, l.laneId);
   let outcome: LaneOutcome;
   try {

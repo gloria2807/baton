@@ -7,9 +7,11 @@ import { join } from 'node:path';
 import { LookResult, TALK_KEYS, isTalkKeyId, type Anchor, type TalkKeyId } from '@baton/core';
 import { Model } from '@baton/model';
 import { runBench } from './bench';
+import { runMultiBench } from './bench-multi';
 import { BridgeServer } from './bridge-server';
 import { Conductor, type CardAnswer } from './conductor';
 import { CueSession } from './cue';
+import { openScoreView, registerScoreView, snapshotScoreView } from './score-view';
 import { log } from './log';
 import { loadEnv, loadPairingToken, outDir } from './paths';
 import { PushToTalk } from './ptt';
@@ -121,6 +123,7 @@ function refreshTray() {
       },
       { label: 'Pairing token', click: () => send('podium:showPairing', null) },
       { label: 'Copy pairing token', click: () => clipboard.writeText(token) },
+      { label: 'Open Score view', click: () => openScore() },
       { label: 'Run lane self-test', click: () => void runSelfTest() },
       { type: 'separator' },
       { label: 'Quit Baton', click: () => app.quit() },
@@ -145,6 +148,10 @@ async function runSelfTest() {
   log(`SELFTEST_RESULT ${JSON.stringify(result)}`);
   send('podium:notice', result.ok ? 'Lane self-test passed' : `Lane self-test failed: ${result.error}`);
   return result;
+}
+
+function openScore(runId?: string) {
+  openScoreView(join(__dirname, 'preload.cjs'), join(__dirname, 'renderer', 'index.html'), runId);
 }
 
 function extensionState(): ExtensionState {
@@ -196,7 +203,8 @@ app.whenReady().then(async () => {
   }
   bridge.on('paired', () => send('extension', 'connected' satisfies ExtensionState));
   bridge.on('unpaired', () => send('extension', 'waiting' satisfies ExtensionState));
-  conductor = new Conductor(bridge, () => model, send, () => profile);
+  // Read on every cue, so edits (or a demo reset) take effect at once.
+  conductor = new Conductor(bridge, () => model, send, () => (profile = loadProfile()));
   bridge.on('laneEvent', (e) => {
     if (e.kind === 'anchor') cueSession?.addChrome(e.cueId, e.anchor);
   });
@@ -217,6 +225,8 @@ app.whenReady().then(async () => {
     if (typeof id === 'number' && answer && typeof answer === 'object') conductor.answer(id, answer as CardAnswer);
   });
   ipcMain.handle('lanes:stopAll', () => conductor.stopAll());
+  registerScoreView();
+  ipcMain.handle('score:open', (_e, runId: unknown) => openScore(typeof runId === 'string' ? runId : undefined));
   ipcMain.handle('pairing:copy', () => clipboard.writeText(token));
   ipcMain.on('mic:timing', (_e, openMs: unknown, seconds: unknown, timing: unknown) => {
     if (typeof seconds === 'number')
@@ -286,6 +296,23 @@ function handleArgs(argv: string[]) {
       log(`PROBE field “${field.name}” (autocomplete hints: ${field.hints ?? '-'}) type → ${JSON.stringify(typed)}; now holds “${after?.value ?? '?'}”`);
     }, 'PROBE');
 
+  // --cue="Get me there" [--anchor-url=…]: a typed cue, as if spoken while pointing at that page.
+  const typed = arg('cue');
+  if (typed)
+    void whenPaired(async () => {
+      const url = arg('anchor-url');
+      const anchors: Anchor[] = [];
+      if (url) {
+        const html = await (await fetch(url)).text();
+        const text = html.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, '\n').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\n\s*\n+/g, '\n').trim();
+        const title = html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? url;
+        anchors.push({ n: 1, at: 300, source: 'chrome', url, title, laneId: arg('lane'), point: { x: 400, y: 300 }, target: { tag: 'article', role: 'article', label: title, text: text.slice(0, 4000) } });
+      }
+      await conductor.fromCue({ id: `cue-${Date.now().toString(36)}`, transcript: typed, intent: '', anchors, heldMs: 2000 });
+    }, 'CUE');
+
+  if (argv.includes('--score-view')) void snapshotScoreView(join(__dirname, 'preload.cjs'), join(__dirname, 'renderer', 'index.html'), join(outDir('selftest'), 'score-view.png')).then(() => log('score view snapshot saved'));
+
   // Pick up a rebuilt extension.
   if (argv.includes('--reload-extension')) void whenPaired(() => bridge.request({ op: 'reloadExtension' }), 'reload-extension');
 
@@ -298,6 +325,14 @@ function handleArgs(argv: string[]) {
           .runOne({ name: arg('name') ?? 'Blue', goal: task, startUrl: arg('url') ?? 'https://www.google.com/' })
           .then((out) => log(`TASK_RESULT ${JSON.stringify({ status: out.status, result: out.result, steps: out.steps, ms: out.ms, receipts: out.receipts })}`)),
       'TASK',
+    );
+
+  // --bench-multi or --bench-multi=id,id: one lane in sequence vs the conductor in parallel.
+  const multi = argv.find((a) => a === '--bench-multi' || a.startsWith('--bench-multi='));
+  if (multi)
+    void whenPaired(
+      () => (model ? runMultiBench(bridge, model, multi.includes('=') ? multi.split('=')[1]!.split(',') : undefined) : Promise.reject(new Error('no Baseten key'))),
+      'BENCH_MULTI',
     );
 
   // --bench or --bench=id,id runs the benchmark unattended (no approvals beyond each task's own).

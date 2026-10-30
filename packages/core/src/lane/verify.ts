@@ -63,6 +63,18 @@ export function verify(action: Action, before: LookResult, after: LookResult, ta
       const ok = iso ? field.value === iso : norm(field.value ?? '') === norm(action.text) || (!!field.value && norm(action.text).includes(norm(field.value)));
       return ok ? { ok: true, note: `field now holds “${field.value}”` } : { ok: false, note: `field holds “${field.value ?? ''}”, not “${action.text}”` };
     }
+    case 'fill_form': {
+      // Submitted: the page must have moved on. Not submitted: every field must hold its value.
+      if (action.submit !== undefined) return changed ? { ok: true, note: after.url !== before.url ? `submitted, now on ${after.url}` : 'submitted, the page changed' } : { ok: false, note: 'pressing the button changed nothing' };
+      const wrong = action.fields.filter((f) => {
+        const el = before.elements.find((e) => e.mark === f.mark);
+        const now = el && findSame(el, after);
+        if (!now) return true;
+        const iso = now.type === 'date' ? toIsoDate(f.value) : null;
+        return iso ? now.value !== iso : !(norm(now.value ?? '') === norm(f.value) || norm(now.value ?? '').includes(norm(f.value)) || norm(f.value).includes(norm(now.value ?? '-')));
+      });
+      return wrong.length ? { ok: false, note: `${wrong.length} field(s) did not take their value (mark ${wrong.map((f) => f.mark).join(', ')})` } : { ok: true, note: `${action.fields.length} fields filled` };
+    }
     case 'fill_cells': {
       // Every value written must now be in some field on the page.
       const values = after.elements.map((e) => norm(e.value ?? ''));

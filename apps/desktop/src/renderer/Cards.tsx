@@ -13,7 +13,21 @@ export type Card =
   | { kind: 'approval'; id: number; laneId: string; laneName: string; color: string; summary: string; reason: string; image?: string }
   | { kind: 'question'; id: number; laneId: string; laneName: string; color: string; question: string }
   | { kind: 'injection'; id: number; laneId: string; laneName: string; color: string; url: string; findings: Array<{ source: string; text: string }> }
-  | { kind: 'result'; id: number; laneId: string; laneName: string; color: string; status: string; result: string; detail: string };
+  | { kind: 'result'; id: number; laneId: string; laneName: string; color: string; status: string; result: string; detail: string }
+  | {
+      kind: 'score';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      headline: string;
+      parts: Array<{ name: string; color: string; status: string; line: string }>;
+      approvals: Array<{ laneName: string; color: string; summary: string; image?: string }>;
+      seconds: number;
+      manualMinutes: number;
+      done: boolean;
+      runId: string;
+    };
 
 const answer = (id: number, a: unknown) => void window.baton.answerCard(id, a);
 
@@ -56,8 +70,66 @@ function Head({ card, label }: { card: Card; label: string }) {
   );
 }
 
+const PART_STATE: Record<string, string> = { done: 'done', stopped: 'stopped', failed: 'failed', skipped: 'skipped', running: 'working', waiting: 'waiting', 'waiting-approval': 'needs your yes' };
+
 export function CardView({ card }: { card: Card }) {
   switch (card.kind) {
+    case 'score':
+      return (
+        <div className={`card score ${card.approvals.length ? 'approval' : ''}`}>
+          <Head card={card} label={card.done ? 'all done' : card.approvals.length ? 'needs your yes' : 'working'} />
+          <div className="card-title">{card.headline}</div>
+          <ul className="parts">
+            {card.parts.map((p) => (
+              <li key={p.name} style={{ ['--c' as string]: p.color }}>
+                <i />
+                <span className="lane-name">{p.name}</span>
+                <span className={`part-state s-${p.status}`}>{PART_STATE[p.status] ?? p.status}</span>
+                <span className="part-line">{p.line}</span>
+              </li>
+            ))}
+          </ul>
+          {card.approvals.length > 0 && (
+            <div className="bundle">
+              {card.approvals.map((a, i) => (
+                <div className="bundle-item" key={i} style={{ ['--c' as string]: a.color }}>
+                  {a.image && <img src={a.image} alt="" />}
+                  <div>
+                    <div className="lane-name">{a.laneName}</div>
+                    <div>{a.summary}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="card-actions">
+            <span className="hint">
+              {card.seconds} s · about {card.manualMinutes} min by hand{card.approvals.length ? ' · or say “yes” / “no”' : ''}
+            </span>
+            {card.approvals.length ? (
+              <>
+                <button className="btn ghost" onClick={() => answer(card.id, { choice: 'decline' })}>
+                  Decline
+                </button>
+                <button className="btn" onClick={() => answer(card.id, { choice: 'approve' })}>
+                  {card.approvals.length > 1 ? `Approve all ${card.approvals.length}` : 'Approve'}
+                </button>
+              </>
+            ) : (
+              <>
+                {card.done && (
+                  <button className="btn ghost" onClick={() => void window.baton.openScore(card.runId)}>
+                    Show the Score
+                  </button>
+                )}
+                <button className="btn ghost" onClick={() => answer(card.id, { choice: 'dismiss' })}>
+                  Dismiss
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      );
     case 'approval':
       return (
         <div className="card approval">

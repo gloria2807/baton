@@ -65,6 +65,8 @@ export interface Supervisor {
   injection(findings: InjectionFinding[], look: LookResult): Promise<'continue' | 'stop'>;
   status(s: LaneStatus): void;
   shouldStop(): boolean;
+  // Instructions the person gave this lane while it runs (pointing at its window and speaking).
+  inbox?(): string[];
 }
 
 export type GateRecord = 'allowed' | 'approved' | 'pre-approved' | 'declined' | 'blocked';
@@ -121,6 +123,8 @@ const describe = (a: Action, el?: Element): string => {
       return `select “${a.option}” in${target}`;
     case 'fill_cells':
       return `fill_cells ${a.rows.length} rows from${target}`;
+    case 'fill_form':
+      return `fill_form ${a.fields.map((f) => `[${f.mark}]=“${f.value.slice(0, 30)}”`).join(' ')}${a.submit !== undefined ? ` then press [${a.submit}]` : ''}`;
     case 'scroll':
       return a.mark ? `scroll to${target}` : `scroll ${a.direction ?? 'down'}`;
     case 'read':
@@ -157,6 +161,7 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
   let failStreak = 0;
   let lastImageUrl = '';
   let warning: string | undefined;
+  const instructions: string[] = [];
 
   const addUsage = (u?: Usage) => {
     if (!u) return;
@@ -180,6 +185,10 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
 
   for (let n = 1; n <= maxSteps; n++) {
     if (supervisor.shouldStop()) return end('stopped', 'Stopped by the person.', n - 1);
+    for (const said of supervisor.inbox?.() ?? []) {
+      instructions.push(said);
+      await receipts.event('answer', { instruction: said });
+    }
 
     // Rule 3: a page that talks to AI agents pauses the lane until the person decides.
     const findings = detectInjection(injectionSources(look));
@@ -195,15 +204,25 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
     // Loop guard: the same successful action three times in a row means the lane is stuck.
     const last3 = history.slice(-3);
     const repeating = last3.length === 3 && last3.every((h) => h.action === last3[0]!.action && h.outcome.startsWith('ok'));
+    // Going round in a small circle (A, B, A, B… or A, B, C, A, B, C) is being stuck too.
+    const last6 = history.slice(-6).map((h) => h.action);
+    const circling = last6.length === 6 && new Set(last6).size <= 3 && last6.slice(0, 3).join('|') === last6.slice(3).join('|');
+    const circlingTwo = last6.length === 6 && new Set(last6).size === 2 && last6.every((a, i) => a === last6[i % 2]);
     const stepWarning = repeating
       ? `You have done “${last3[0]!.action.slice(0, 80)}” three times and it worked each time. It is done; do not repeat it. Move on to the next part of the goal, or finish.`
-      : warning;
-    const withImage = n === 1 || look.url !== lastImageUrl || failStreak > 0;
+      : circling || circlingTwo
+        ? `You are going in circles between the same ${new Set(last6).size} actions. Stop re-reading and act: fill in and submit the form the goal needs, or finish with what you have.`
+        : warning;
+    // Cheap reads first: the element list and page text are enough on most pages and a step with a
+    // screenshot costs about four times as long (Stage 0). Look at the picture only when the last
+    // step failed, or when the page has too little text to act on.
+    const thin = look.text.trim().length < 200 || look.elements.length < 3;
+    const withImage = failStreak > 0 || (thin && look.url !== lastImageUrl);
     if (withImage) lastImageUrl = look.url;
     const tDecide = Date.now();
     let decision: StepDecision;
     try {
-      const reply = await brain.decide(decideMessages({ goal: spec.goal, look, history, notes, withImage, warning: stepWarning }));
+      const reply = await brain.decide(decideMessages({ goal: spec.goal, look, history, notes, withImage, warning: stepWarning, instructions }));
       addUsage(reply.usage);
       decision = reply.value;
     } catch (e) {
@@ -244,7 +263,7 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
         ms: { decide: decideMs, act: Date.now() - tAct, total: Date.now() - tDecide },
       };
       await receipts.step(rec, screenshot ?? before.screenshot);
-      history.push({ n, action: describe(action, target), outcome: gate === 'blocked' || gate === 'declined' ? `${gate.toUpperCase()}: ${verdict.note}` : `${verdict.ok ? 'ok' : 'FAILED'}${verdict.note ? `: ${verdict.note}` : ''}` });
+      history.push({ n, page: before.url, action: describe(action, target), outcome: gate === 'blocked' || gate === 'declined' ? `${gate.toUpperCase()}: ${verdict.note}` : `${verdict.ok ? 'ok' : 'FAILED'}${verdict.note ? `: ${verdict.note}` : ''}` });
     };
 
     // Tools that do not touch the page.
@@ -266,6 +285,14 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
       continue;
     }
     if (action.tool === 'read' || action.tool === 'extract_list') {
+      // Re-reading the same page does not add facts: the third read in a row is refused.
+      const reads = history.slice(-4).filter((h) => (h.action.startsWith('read') || h.action.startsWith('extract_list')) && h.page === look.url).length;
+      if (reads >= 2) {
+        verdict = { ok: false, note: 'you have read this page twice already; its facts are in your notes. Act, or finish with what you have (say "not shown" for anything missing).' };
+        failStreak++;
+        await record();
+        continue;
+      }
       try {
         if (action.tool === 'read') {
           const r = await brain.read(readMessages(spec.goal, action.what, look));
@@ -290,7 +317,35 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
     try {
       if ('mark' in action && action.mark !== undefined && !target) throw new Error(`mark ${action.mark} is not in the current element list`);
 
+      // Going back to the same page again and again is how lanes get lost: the third visit within
+      // eight steps is refused, and the lane must use what it already read.
+      if (action.tool === 'open_url') {
+        const visits = history.slice(-8).filter((h) => h.action === `open_url ${action.url}`).length;
+        if (visits >= 2) throw new Error(`you have already opened ${action.url} ${visits} times; what it shows is in your history and notes. Act on it, or finish with what you have.`);
+      }
+
       let g: Gate = { kind: 'allow' };
+      // fill_form: every field must be on the page and allowed; its submit button is gated like a click.
+      let formSubmit: Element | undefined;
+      if (action.tool === 'fill_form') {
+        for (const f of action.fields) {
+          const el = look.elements.find((e) => e.mark === f.mark);
+          if (!el) throw new Error(`mark ${f.mark} is not in the current element list`);
+          const reason = el.blocked ? 'password' : blockedFieldReason({ tag: el.tag, type: el.type, name: el.name, label: el.name });
+          if (el.blocked || reason) {
+            gate = 'blocked';
+            verdict = { ok: false, note: `${blockedFieldMessage(reason ?? 'password')} (“${el.name}”). Fill the other fields and use ask_person for this one.` };
+            await record();
+            break;
+          }
+        }
+        if (gate === 'blocked') continue;
+        if (action.submit !== undefined) {
+          formSubmit = look.elements.find((e) => e.mark === action.submit);
+          if (!formSubmit) throw new Error(`mark ${action.submit} is not in the current element list`);
+          g = gateClick(formSubmit, look);
+        }
+      }
       if (action.tool === 'type') {
         // Rule 2, checked here as well as in the extension.
         const reason = target!.blocked ? 'password' : blockedFieldReason({ tag: target!.tag, type: target!.type, name: target!.name, label: target!.name });
@@ -310,12 +365,13 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
         if (isPreApproved(g, look, spec.preApproved)) gate = 'pre-approved';
         else {
           supervisor.status({ kind: 'waiting-approval', summary: g.summary });
-          const yes = await supervisor.approve({ category: g.category, summary: g.summary, reason: decision.reason, element: target!, look });
+          const gated = formSubmit ?? target!;
+          const yes = await supervisor.approve({ category: g.category, summary: g.summary, reason: decision.reason, element: gated, look });
           if (!yes) {
             gate = 'declined';
             verdict = { ok: true, note: `the person declined: ${g.summary}` };
             await record();
-            return end('stopped', `Stopped before “${target!.name}”: you declined.`, n);
+            return end('stopped', `Stopped before “${gated.name}”: you declined.`, n);
           }
           gate = 'approved';
           supervisor.status({ kind: 'running', step: n, thinking: decision.thinking });
@@ -341,6 +397,15 @@ export async function runLane(spec: LaneSpec, hands: Hands, brain: Brain, superv
         case 'select':
           await hands.select(action.mark, action.option);
           break;
+        case 'fill_form': {
+          for (const f of action.fields) {
+            const el = look.elements.find((e) => e.mark === f.mark)!;
+            if (el.tag === 'select') await hands.select(f.mark, f.value);
+            else await hands.type(f.mark, f.value, false);
+          }
+          if (action.submit !== undefined) await hands.click(action.submit);
+          break;
+        }
         case 'fill_cells':
           await hands.fillCells(action.mark, action.rows);
           break;

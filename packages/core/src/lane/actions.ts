@@ -16,6 +16,12 @@ export const Action = z.discriminatedUnion('tool', [
   z.object({ tool: z.literal('click'), mark }),
   z.object({ tool: z.literal('type'), mark, text: z.coerce.string().max(2000), submit: z.boolean().default(false) }),
   z.object({ tool: z.literal('select'), mark, option: z.coerce.string().min(1).max(200) }),
+  // Fill several fields of a form in one step (text, dates, dropdowns), then optionally press a button.
+  z.object({
+    tool: z.literal('fill_form'),
+    fields: z.array(z.object({ mark, value: z.coerce.string().max(2000) })).min(1).max(30),
+    submit: mark.optional(),
+  }),
   // Enter a block of rows into a grid of fields (a sheet), starting at the cell `mark`.
   z.object({ tool: z.literal('fill_cells'), mark, rows: Rows }),
   z.object({ tool: z.literal('scroll'), direction: z.enum(['up', 'down']).optional(), mark: mark.optional() }),
@@ -25,7 +31,8 @@ export const Action = z.discriminatedUnion('tool', [
   z.object({ tool: z.literal('wait_for'), text: z.coerce.string().min(1).max(200) }),
   z.object({ tool: z.literal('back') }),
   z.object({ tool: z.literal('ask_person'), question: z.string().min(1).max(300) }),
-  z.object({ tool: z.literal('finish'), result: z.string().min(1).max(600), data: z.unknown().optional() }),
+  // Long answers are trimmed rather than rejected: a finished lane should not fail on length.
+  z.object({ tool: z.literal('finish'), result: z.string().min(1).transform((s) => (s.length > 1200 ? `${s.slice(0, 1199)}…` : s)), data: z.unknown().optional() }),
 ]);
 export type Action = z.infer<typeof Action>;
 export type Tool = Action['tool'];
@@ -86,6 +93,15 @@ const TOOL_PARAMS: Record<Tool, { description: string; properties: Record<string
     required: ['mark', 'text'],
   },
   select: { description: 'Choose an option in a dropdown by its text.', properties: { mark: int('Mark number of the dropdown'), option: str('Option text') }, required: ['mark', 'option'] },
+  fill_form: {
+    description:
+      'Fill several fields of a form in one step: text boxes, dates (YYYY-MM-DD) and dropdowns (option text), then optionally press the submit/continue button. Prefer this to typing fields one by one. Off-screen fields can be filled directly.',
+    properties: {
+      fields: { type: 'array', items: { type: 'object', properties: { mark: { type: 'integer' }, value: { type: 'string' } }, required: ['mark', 'value'] }, description: 'Each field mark and the value to put in it' },
+      submit: int('Mark of the button to press after filling, if the form should be submitted'),
+    },
+    required: ['fields'],
+  },
   fill_cells: {
     description: 'Enter a block of rows into a grid of fields (a sheet or table of inputs) in one step, starting at the cell given by mark and filling right and down.',
     properties: { mark: int('Mark number of the top-left cell to fill'), rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'Rows of cell values' } },
@@ -137,6 +153,7 @@ export const TOOL_GUIDE = `Tools (pick exactly one per step):
 - {"tool":"click","mark":number} click a numbered element.
 - {"tool":"type","mark":number,"text":string,"submit":boolean} replace a field's text; submit presses Enter.
 - {"tool":"select","mark":number,"option":string} choose an option in a dropdown by its text.
+- {"tool":"fill_form","fields":[{"mark":number,"value":string}],"submit":number} fill a whole form in one step, then optionally press a button.
 - {"tool":"fill_cells","mark":number,"rows":string[][]} enter many rows into a sheet at once, starting at the top-left cell mark.
 - {"tool":"scroll","direction":"down"|"up"} or {"tool":"scroll","mark":number} scroll the page or bring an element into view.
 - {"tool":"read","what":string} note facts from the page text, e.g. "the price and time of the first 3 flights".

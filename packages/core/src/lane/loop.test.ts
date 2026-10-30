@@ -119,6 +119,7 @@ class FakeBrain implements Brain {
 }
 
 class FakePerson implements Supervisor {
+  inbox?: () => string[];
   approvals: ApprovalRequest[] = [];
   questions: string[] = [];
   injections = 0;
@@ -348,5 +349,89 @@ describe('lane loop: fill_cells', () => {
   it('accepts rows as tab-separated text', async () => {
     const { StepDecision } = await import('./actions.js');
     expect(StepDecision.parse({ thinking: 't', action: { tool: 'fill_cells', mark: 1, rows: 'a\tb\nc\td\n' } }).action).toEqual({ tool: 'fill_cells', mark: 1, rows: [['a', 'b'], ['c', 'd']] });
+  });
+});
+
+describe('lane loop: redirect while running', () => {
+  it('passes the new instruction to every later step', async () => {
+    const brain = new FakeBrain([{ action: { tool: 'read', what: 'fares' } }, { action: { tool: 'read', what: 'fares' } }, { action: { tool: 'finish', result: 'ok' } }]);
+    const person = new FakePerson();
+    let sent = false;
+    person.inbox = () => {
+      if (sent || brain.seen.length !== 1) return [];
+      sent = true;
+      return ['Under two hundred.'];
+    };
+    await run({ goal: 'find a flight' }, new FakeHands(), brain, person);
+    expect(brain.userText(0)).not.toContain('redirected');
+    expect(brain.userText(1)).toContain('The person redirected this lane while it ran');
+    expect(brain.userText(1)).toContain('“Under two hundred.”');
+    expect(brain.userText(2)).toContain('“Under two hundred.”');
+  });
+});
+
+describe('lane loop: circling guard', () => {
+  it('warns when the lane alternates between the same two pages', async () => {
+    const a = { action: { tool: 'open_url' as const, url: 'http://app.test/new' } };
+    const b = { action: { tool: 'open_url' as const, url: 'http://app.test/' } };
+    const brain = new FakeBrain([a, b, a, b, a, b, { action: { tool: 'finish', result: 'ok' } }]);
+    await run({ goal: 'g' }, new FakeHands(), brain, new FakePerson());
+    expect(brain.userText(5)).not.toContain('going in circles');
+    expect(brain.userText(6)).toContain('You are going in circles between the same 2 actions');
+  });
+});
+
+describe('lane loop: fill_form', () => {
+  it('fills a form and submits it through the approval gate', async () => {
+    const hands = new FakeHands('/new');
+    const brain = new FakeBrain([
+      { action: { tool: 'fill_form', fields: [{ mark: 1, value: 'Kestrel Print Works' }], submit: 2 } },
+      { action: { tool: 'finish', result: 'saved' } },
+    ]);
+    const person = new FakePerson({ approve: true });
+    const { receipts } = await run({ goal: 'g' }, hands, brain, person);
+    expect(hands.calls).toEqual(['type 1 Kestrel Print Works', 'click 2']);
+    expect(person.approvals[0]!.summary).toBe('Submit: “Save bill” on app.test');
+    expect(receipts.steps[0]).toMatchObject({ gate: 'approved', verdict: { ok: true } });
+  });
+
+  it('fills without submitting and checks every field', async () => {
+    const hands = new FakeHands('/new');
+    const brain = new FakeBrain([{ action: { tool: 'fill_form', fields: [{ mark: 1, value: 'Kestrel' }] } }, { action: { tool: 'finish', result: 'ok' } }]);
+    const { receipts } = await run({ goal: 'g' }, hands, brain, new FakePerson());
+    expect(receipts.steps[0]!.verdict).toEqual({ ok: true, note: '1 fields filled' });
+  });
+
+  it('refuses the whole form when one field is a password', async () => {
+    const hands = new FakeHands('/signin');
+    const brain = new FakeBrain([
+      { action: { tool: 'fill_form', fields: [{ mark: 1, value: 'ama@harbourline.example' }, { mark: 2, value: 'hunter2' }] } },
+      { action: { tool: 'finish', result: 'x' } },
+    ]);
+    const { receipts } = await run({ goal: 'g' }, hands, brain, new FakePerson());
+    expect(hands.calls).toEqual([]);
+    expect(receipts.steps[0]!.gate).toBe('blocked');
+  });
+});
+
+describe('lane loop: revisit limit', () => {
+  it('refuses to open the same page a third time in a short span', async () => {
+    const hands = new FakeHands();
+    const a = { action: { tool: 'open_url' as const, url: 'http://app.test/new' } };
+    const b = { action: { tool: 'open_url' as const, url: 'http://app.test/' } };
+    const brain = new FakeBrain([a, b, a, b, a, { action: { tool: 'finish', result: 'ok' } }]);
+    const { receipts } = await run({ goal: 'g' }, hands, brain, new FakePerson());
+    expect(hands.calls.filter((c) => c === 'open http://app.test/new')).toHaveLength(2);
+    expect(receipts.steps[4]!.verdict.note).toMatch(/already opened http:\/\/app.test\/new 2 times/);
+  });
+});
+
+describe('lane loop: read limit', () => {
+  it('refuses a third read of the same page in a row', async () => {
+    const read = { action: { tool: 'read' as const, what: 'everything' } };
+    const brain = new FakeBrain([read, read, read, { action: { tool: 'finish', result: 'ok' } }]);
+    const { receipts } = await run({ goal: 'g' }, new FakeHands(), brain, new FakePerson());
+    expect(receipts.steps.map((s) => s.verdict.ok)).toEqual([true, true, false, true]);
+    expect(receipts.steps[2]!.verdict.note).toMatch(/read this page twice already/);
   });
 });

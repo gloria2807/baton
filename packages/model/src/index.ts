@@ -160,6 +160,9 @@ export class Model {
     tools: OpenAI.Chat.Completions.ChatCompletionTool[],
     fromToolCall: (name: string, args: Record<string, unknown>) => unknown,
     effort: Effort = 'low',
+    // "required" is not airtight: the model occasionally answers in plain prose. The caller decides
+    // what such a reply means (for a lane: its final answer).
+    fromProse?: (text: string) => unknown,
   ): Promise<Completion<T>> {
     const t0 = performance.now();
     let convo = messages;
@@ -195,7 +198,14 @@ export class Model {
           const args = call.arguments?.trim() ? (JSON.parse(call.arguments) as unknown) : {};
           if (typeof args !== 'object' || args === null || Array.isArray(args)) throw new Error('tool arguments are not an object');
           candidate = fromToolCall(call.name, args as Record<string, unknown>);
-        } else candidate = extractJson(lastRaw);
+        } else {
+          try {
+            candidate = extractJson(lastRaw);
+          } catch (e) {
+            if (!fromProse || lastRaw.trim().length < 20 || lastRaw.includes('<|')) throw e;
+            candidate = fromProse(lastRaw.trim());
+          }
+        }
         const value = schema.parse(candidate);
         return { value, reasoning: msg?.reasoning_content ?? '', ms: performance.now() - t0, usage };
       } catch (e) {

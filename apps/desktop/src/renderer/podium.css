@@ -165,3 +165,16 @@ html, body, #root { margin: 0; height: 100%; background: transparent; overflow: 
 .profile label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
 .profile input { font: 13px inherit; font-family: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-edge); border-radius: 8px; padding: 7px 10px; }
 .profile input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+
+/* Score card: one line per lane, then the bundled approvals */
+.parts { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.parts li { display: grid; grid-template-columns: 10px 70px 96px 1fr; align-items: center; gap: 10px; font-size: 13px; }
+.parts li i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.part-state { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.part-state.s-done { color: var(--ok); }
+.part-state.s-waiting-approval { color: var(--warn); }
+.part-state.s-failed, .part-state.s-skipped, .part-state.s-stopped { color: #fda4af; }
+.part-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bundle { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--glass-edge); padding-top: 12px; }
+.bundle-item { display: flex; align-items: center; gap: 12px; font-size: 13px; padding: 6px; border-radius: 10px; border-left: 3px solid var(--c); background: rgba(255, 255, 255, 0.03); }
+.bundle-item img { width: 120px; max-height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--glass-edge); }

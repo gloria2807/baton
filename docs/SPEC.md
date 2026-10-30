@@ -196,6 +196,13 @@ Both produced sensible parallel parts with empty `dependsOn` for independent wor
 - Interpreting a cue (transcript + anchors + profile → answer, task, transfer or clarify) takes 1.6–7 s at `low`, on top of 4.6–6 s to transcribe.
 - Real speech is sometimes transcribed badly: "Put this there" once came back as "Yeah", and once as an unrelated sentence. Because the anchors carry the meaning, the interpreter still chose the right transfer. Prefer moves that the anchors make unambiguous, and keep transcripts visible on the Podium so the person can see what was heard.
 
+### Scores and parallel lanes (measured in Stage 4)
+
+- Planning a Score from a cue takes about 3.5 s at `low`. "Get me there" on the invitation plans four parts (flights, hotel, calendar, reply) that run in parallel.
+- Lanes are fastest with compound tools: `fill_form` fills a whole form (text, dates, dropdowns) and can press its button in one step. With it the calendar part takes 4 steps instead of 29; the four "get me there" lanes took 4–7 steps each and the whole Score finished in 68 s, including one approval.
+- Approvals raised while a Score runs are collected onto one card, shown once no lane is still working; one yes approves them all. Pointing at a lane window and speaking sends the words to that lane alone (its inbox); a lane waiting at the approval card is released and continues in its own window with the new instruction.
+- Lanes must never invent personal details: with no traveller in its goal, a lane once filled a booking with a made-up name. Goals now carry the traveller from the profile, and lanes ask instead of inventing.
+
 ### Streaming
 
 - `stream: true` works. Reasoning streams in `delta.reasoning_content`, then the answer in `delta.content`.

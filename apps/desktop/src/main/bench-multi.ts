@@ -10,7 +10,8 @@ import { screen } from 'electron';
 import { MULTI_TASKS, type MultiTask } from '../../../../bench/multi';
 import type { BridgeServer } from './bridge-server';
 import { LANE_COLORS, SITES } from './conductor';
-import { costUsd, launchLane, toOpenAI } from './lanes';
+import { toOpenAI } from '@baton/model';
+import { costUsd, launchLane } from './lanes';
 import { log } from './log';
 import { repoRoot } from './paths';
 

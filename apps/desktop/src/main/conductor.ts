@@ -24,9 +24,11 @@ import {
   MergeReply,
   Score,
   cueMessages,
+  goalWithProfile,
   manualMinutes,
   mapDeixis,
   mergeMessages,
+  readyForApprovals,
   runScore,
   tile,
   transferGoal,
@@ -42,7 +44,8 @@ import {
 } from '@baton/core';
 import type { Model } from '@baton/model';
 import type { BridgeServer } from './bridge-server';
-import { costUsd, cropElement, launchLane, toOpenAI } from './lanes';
+import { toOpenAI } from '@baton/model';
+import { costUsd, cropElement, launchLane } from './lanes';
 import { outDir } from './paths';
 import { log } from './log';
 
@@ -288,7 +291,7 @@ export class Conductor {
         laneId,
         name: opts.name,
         color,
-        spec: { goal: opts.goal, startUrl: opts.startUrl },
+        spec: { goal: goalWithProfile(opts.goal, this.getProfile()), startUrl: opts.startUrl },
         bounds: this.laneBounds(),
         keepOpen: opts.keepOpen ?? true,
       });
@@ -371,7 +374,7 @@ export class Conductor {
       this.publishLanes();
     }
     const bounds = tile(run.slots.length, workArea, 110)[slot];
-    let goal = part.goal;
+    let goal = goalWithProfile(part.goal, this.getProfile());
     for (;;) {
       st.state = 'running';
       const out = await launchLane(this.bridge, model, this.scoreSupervisor(run, st), {
@@ -388,7 +391,7 @@ export class Conductor {
       st.receipts.push(out.receipts);
       // Redirected while waiting: carry on in the same window with the new instruction.
       if (st.redirect && !this.stopRequested.has(st.laneId)) {
-        goal = `${part.goal}\n\nThe person then told this lane: “${st.redirect}”. Follow that; it overrides the goal where they conflict.`;
+        goal = `${goalWithProfile(part.goal, this.getProfile())}\n\nThe person then told this lane: “${st.redirect}”. Follow that; it overrides the goal where they conflict.`;
         st.redirect = undefined;
         st.attempt++;
         continue;
@@ -464,7 +467,7 @@ export class Conductor {
   // Once no lane is still working and some wait for a yes, show one card with everything.
   private async checkApprovalPoint(run: ScoreRunState) {
     if (run.bundleCard !== undefined || run.bundleAnswered || !run.pending.length) return;
-    if ([...run.parts.values()].some((st) => st.state === 'running' || st.state === 'waiting')) return;
+    if (!readyForApprovals([...run.parts.values()].map((st) => ({ id: st.part.id, dependsOn: st.part.dependsOn, phase: st.state })))) return;
     run.bundleCard = -1; // claimed while the summary is written
     const m = await this.merged(run);
     this.send('speak', m.speech);

@@ -5,26 +5,17 @@ import { nativeImage } from 'electron';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  LANE_TOOLS,
-  ListReply,
-  decisionFromToolCall,
   LookResult,
-  ReadReply,
-  StepDecision,
   redactSecrets,
   runLane,
-  type Brain,
-  type BrainReply,
   type Hands,
-  type LaneMessage,
   type LaneOutcome,
   type LaneSpec,
   type ReceiptSink,
   type StepRecord,
   type Supervisor,
 } from '@baton/core';
-import { imagePart, type Model } from '@baton/model';
-import type OpenAI from 'openai';
+import { ModelBrain, type Model } from '@baton/model';
 import type { BridgeServer } from './bridge-server';
 import { log } from './log';
 import { receiptsDir } from './paths';
@@ -66,38 +57,6 @@ export class BridgeHands implements Hands {
   }
   async thinking(text: string) {
     await this.bridge.request({ op: 'setThinking', laneId: this.laneId, text: text.slice(0, 140) });
-  }
-}
-
-export function toOpenAI(messages: LaneMessage[]): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
-  return messages.map((m) =>
-    m.role === 'system'
-      ? { role: 'system', content: typeof m.content === 'string' ? m.content : m.content.map((p) => (p.type === 'text' ? p.text : '')).join('\n') }
-      : { role: 'user', content: typeof m.content === 'string' ? m.content : m.content.map((p) => (p.type === 'text' ? { type: 'text' as const, text: p.text } : imagePart(p.jpegBase64))) },
-  );
-}
-
-export class ModelBrain implements Brain {
-  constructor(private model: Model) {}
-  private async ask<T>(schema: Parameters<Model['json']>[0], messages: LaneMessage[]): Promise<BrainReply<T>> {
-    const r = await this.model.json(schema, toOpenAI(messages), 'low');
-    return { value: r.value as T, reasoning: r.reasoning, ms: r.ms, usage: r.usage && { input: r.usage.input, output: r.usage.output } };
-  }
-  // Lane steps use the model's native tool calling, which it follows far more reliably than a
-  // JSON format described in the prompt (see the model contract in docs/SPEC.md).
-  async decide(messages: LaneMessage[]): Promise<BrainReply<StepDecision>> {
-    const r = await this.model.toolStep(StepDecision, toOpenAI(messages), LANE_TOOLS as OpenAI.Chat.Completions.ChatCompletionTool[], decisionFromToolCall, 'low', (text) => ({
-      thinking: 'Reporting what I found',
-      reason: 'The model answered in prose instead of calling a tool; its answer is taken as the result.',
-      action: { tool: 'finish', result: text },
-    }));
-    return { value: r.value, reasoning: r.reasoning, ms: r.ms, usage: r.usage && { input: r.usage.input, output: r.usage.output } };
-  }
-  read(messages: LaneMessage[]) {
-    return this.ask<{ facts: string }>(ReadReply, messages);
-  }
-  list(messages: LaneMessage[]) {
-    return this.ask<{ rows: Array<Record<string, unknown>> }>(ListReply, messages);
   }
 }
 

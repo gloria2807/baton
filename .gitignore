@@ -9,3 +9,4 @@ receipts/
 bench/runs/
 video/out/
 *.tsbuildinfo
+apps/live/public/

@@ -35,6 +35,9 @@ const sameUrl = (a: string, b: string) => {
 };
 
 const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+// A one-line field drops line breaks instead of turning them into spaces, so compare without any.
+const squash = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+const holds = (value: string, wanted: string) => norm(value) === norm(wanted) || squash(value) === squash(wanted);
 
 // Marks are renumbered on every look, so find the same field again by what it is.
 export function findSame(target: Element, after: LookResult): Element | undefined {
@@ -60,7 +63,7 @@ export function verify(action: Action, before: LookResult, after: LookResult, ta
       if (!field) return { ok: false, note: 'the field is no longer on the page' };
       // Date inputs hold YYYY-MM-DD whatever was typed; other fields compare loosely.
       const iso = field.type === 'date' ? toIsoDate(action.text) : null;
-      const ok = iso ? field.value === iso : norm(field.value ?? '') === norm(action.text) || (!!field.value && norm(action.text).includes(norm(field.value)));
+      const ok = iso ? field.value === iso : holds(field.value ?? '', action.text) || (!!field.value && norm(action.text).includes(norm(field.value)));
       return ok ? { ok: true, note: `field now holds “${field.value}”` } : { ok: false, note: `field holds “${field.value ?? ''}”, not “${action.text}”` };
     }
     case 'fill_form': {
@@ -71,7 +74,7 @@ export function verify(action: Action, before: LookResult, after: LookResult, ta
         const now = el && findSame(el, after);
         if (!now) return true;
         const iso = now.type === 'date' ? toIsoDate(f.value) : null;
-        return iso ? now.value !== iso : !(norm(now.value ?? '') === norm(f.value) || norm(now.value ?? '').includes(norm(f.value)) || norm(f.value).includes(norm(now.value ?? '-')));
+        return iso ? now.value !== iso : !(holds(now.value ?? '', f.value) || norm(now.value ?? '').includes(norm(f.value)) || norm(f.value).includes(norm(now.value ?? '-')));
       });
       return wrong.length ? { ok: false, note: `${wrong.length} field(s) did not take their value (mark ${wrong.map((f) => f.mark).join(', ')})` } : { ok: true, note: `${action.fields.length} fields filled` };
     }

@@ -76,3 +76,14 @@ export async function runScore(score: Score, opts: RunOptions): Promise<Record<s
     pump();
   });
 }
+
+export type PartPhase = 'waiting' | 'running' | 'waiting-approval' | 'settled';
+
+// When to show the Score's one approval card: some parts wait for a yes, and no other part is still
+// working. A part waiting for a part that is itself waiting for a yes cannot start, so it must not
+// hold the card back; otherwise each would wait for the other for ever.
+export function readyForApprovals(parts: Array<{ id: string; dependsOn: string[]; phase: PartPhase }>): boolean {
+  const phase = new Map(parts.map((p) => [p.id, p.phase]));
+  if (!parts.some((p) => p.phase === 'waiting-approval')) return false;
+  return !parts.some((p) => p.phase === 'running' || (p.phase === 'waiting' && p.dependsOn.every((d) => phase.get(d) === 'settled')));
+}

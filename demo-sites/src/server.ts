@@ -27,5 +27,7 @@ for (const site of sites) {
       console.error(`[demo-sites] ${site.name} could not start on ${site.port}: ${e.message}`);
       process.exit(1);
     })
-    .listen(site.port, '127.0.0.1', () => console.log(`[demo-sites] ${site.name.padEnd(11)} http://localhost:${site.port}`));
+    .listen(site.port, '127.0.0.1', () =>
+      console.log(`[demo-sites] ${site.name.padEnd(11)} http://localhost:${site.port}`),
+    );
 }

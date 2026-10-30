@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runScore, type PartResult, type PartUpdate } from './scheduler.js';
+import { readyForApprovals, runScore, type PartPhase, type PartResult, type PartUpdate } from './scheduler.js';
 import { Score, levels } from './score.js';
 import { grid, tile } from './tiling.js';
 
@@ -143,5 +143,24 @@ describe('tiling', () => {
     const b = tile(3, { x: 0, y: 0, width: 1920, height: 1032 }, 120);
     expect(b[2]!.left).toBeGreaterThan(b[0]!.left);
     expect(b[2]!.left + b[2]!.width / 2).toBeCloseTo(960, -1);
+  });
+});
+
+describe('readyForApprovals', () => {
+  const p = (id: string, phase: PartPhase, dependsOn: string[] = []) => ({ id, phase, dependsOn });
+  it('waits while any lane is still working', () => {
+    expect(readyForApprovals([p('a', 'waiting-approval'), p('b', 'running')])).toBe(false);
+  });
+  it('shows the card once every working lane has stopped for a yes or finished', () => {
+    expect(readyForApprovals([p('a', 'waiting-approval'), p('b', 'settled'), p('c', 'waiting-approval')])).toBe(true);
+  });
+  it('is not held back by a part that waits on a part waiting for a yes', () => {
+    expect(readyForApprovals([p('flights', 'waiting-approval'), p('calendar', 'waiting', ['flights'])])).toBe(true);
+  });
+  it('is held back by a part that is about to start', () => {
+    expect(readyForApprovals([p('flights', 'waiting-approval'), p('hotel', 'settled'), p('calendar', 'waiting', ['hotel'])])).toBe(false);
+  });
+  it('needs something to approve', () => {
+    expect(readyForApprovals([p('a', 'settled')])).toBe(false);
   });
 });

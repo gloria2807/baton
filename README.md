@@ -17,6 +17,28 @@ Built for the Meta Global AI Developer Hackathon, Startup track.
 
 When the work is done, the Score view replays every lane as a staff line: one note per step, approvals marked, the screenshots underneath.
 
+**Try it without installing anything:** [Baton Live](#baton-live-try-it-in-a-browser) runs the same conductor in a browser on fictional demo sites.
+
+## Baton Live: try it in a browser
+
+Baton Live is the no-install version: open the page and conduct four lanes in about a minute. It is the same product on the same core: the same cue interpreter, planner, lane loop, safety rules, approvals and receipts (`packages/core`), and the same model client (`packages/model`).
+
+- **The sites run in your browser.** Inbox, Ledgerly and Roam are rendered inside your own page, so every visitor has their own copy and nothing you do reaches anyone else. Each lane is a frame of a real page with a real address; every click is a real page load.
+- **The hands are the extension's own DOM code** (`apps/extension/src/page.ts`), driven by direct calls instead of the Chrome debugger. Lanes read pages as text (no screenshots), which the model contract measured to be about four times faster and is cheaper.
+- **Talk by holding Space** (or the talk button) and resting the pointer on things, exactly as on the desktop, or type the request. The tour offers "Get me there" and "Put this there" with one click each.
+- **The key stays on the server.** The page calls `/api/chat/completions` on its own site. That function adds the Baseten key, forwards only the request shape Baton makes (one model, no images, no streaming, bounded tokens), and enforces the limits below. `node scripts/check-live-key.mjs` checks the built files and the server's responses for the key.
+- **Limits.** Each visitor gets 200 model calls an hour and $1.00 of model spend a day. All visitors together share a hard $5.00 a day. Refusals say plainly what happened and every lane stops. A deployment with no budget store refuses to spend at all.
+- **What it does not do.** Real websites cannot be framed or driven from a web page, so Baton Live works on the demo sites only. "Watch me, then do the rest" needs the desktop app. Both are said on the page.
+
+### Deploy Baton Live on Vercel
+
+1. Import the repository in Vercel. Keep the root directory as the repository root; `vercel.json` sets the install, build and output.
+2. In the project's Storage tab, add an **Upstash for Redis** database (free tier) and connect it. It sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`, which keep the budget counters.
+3. In Settings, Environment variables, add `BASETEN_API_KEY`. Optional: `LIVE_DAILY_BUDGET_USD` (default 5), `LIVE_VISITOR_BUDGET_USD` (default 1), `LIVE_VISITOR_CALLS_PER_HOUR` (default 200), `LIVE_VISITOR_SALT` (any random text).
+4. Deploy, then open the address in a private window.
+
+To run it locally: `npm run dev -w @baton/live` serves it at http://localhost:5180 with the proxy reading `.env`.
+
 ## Install
 
 ### Desktop app (Windows)
@@ -161,7 +183,7 @@ Parallel lanes were up to 1.7× faster on requests with independent parts, and s
 npm test
 ```
 
-152 unit tests cover the bridge protocol, pairing, safety rules, the lane loop (with a fake browser and a fake model), verification, pointing and cue fixtures (including recorded real cues), Scores, the scheduler, tiling, routine learning from recorded rehearsals and the spend governor. `npm run typecheck` and `npm run lint` are clean.
+173 unit tests cover the bridge protocol, pairing, safety rules, the lane loop (with a fake browser and a fake model), verification, pointing and cue fixtures (including recorded real cues), Scores, the scheduler and its approval point, tiling, routine learning from recorded rehearsals, the spend governor and Baton Live's model proxy (its limits, what it forwards, and that the key never appears in a response). `npm run typecheck` and `npm run lint` are clean.
 
 ## Built during the hackathon
 
@@ -169,13 +191,14 @@ Everything in this repository was written from scratch between October 27 and No
 
 The commit history shows each part as it was built:
 
-| Stage                      | What was built                                                                                                                                                                     |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Starter kit                | The spec, build plan and film script (documents only, no code).                                                                                                                    |
-| 0 · Model contract         | The measured contract with Muse Spark Open: request shape, JSON, images, padded audio, streaming, parallel throughput, cost.                                                       |
-| 1 · Hands and Podium       | The Chrome extension (CDP hands, marks, ghost cursor), the paired WebSocket bridge, the Electron Podium and push-to-talk with a configurable key.                                  |
-| 2 · One lane               | The lane step loop, tool-calling decisions, deterministic verification, approvals, blocked fields, the injection detector, receipts, the demo sites and the single-lane benchmark. |
-| 3 · Point and speak        | Pointer anchors, spoken cues sent as padded audio, deixis ("this", "there") and the cue interpreter.                                                                               |
-| 4 · The conductor          | Scores (validated plans of parallel parts), the scheduler, window tiling, bundled approvals, redirecting a lane by pointing, the Score view and the parallel benchmark.            |
-| 5 · Rehearse, then perform | Recording a rehearsal, learning a routine with variables, finding the remaining items and performing them in batches; the spend governor.                                          |
-| 6 · Ship                   | The ink-and-brass design system ([docs/DESIGN.md](docs/DESIGN.md)), sounds, demo reset, the Windows installer and the extension package.                                           |
+| Stage                      | What was built                                                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Starter kit                | The spec, build plan and film script (documents only, no code).                                                                                                                                   |
+| 0 · Model contract         | The measured contract with Muse Spark Open: request shape, JSON, images, padded audio, streaming, parallel throughput, cost.                                                                      |
+| 1 · Hands and Podium       | The Chrome extension (CDP hands, marks, ghost cursor), the paired WebSocket bridge, the Electron Podium and push-to-talk with a configurable key.                                                 |
+| 2 · One lane               | The lane step loop, tool-calling decisions, deterministic verification, approvals, blocked fields, the injection detector, receipts, the demo sites and the single-lane benchmark.                |
+| 3 · Point and speak        | Pointer anchors, spoken cues sent as padded audio, deixis ("this", "there") and the cue interpreter.                                                                                              |
+| 4 · The conductor          | Scores (validated plans of parallel parts), the scheduler, window tiling, bundled approvals, redirecting a lane by pointing, the Score view and the parallel benchmark.                           |
+| 5 · Rehearse, then perform | Recording a rehearsal, learning a routine with variables, finding the remaining items and performing them in batches; the spend governor.                                                         |
+| 6 · Ship                   | The ink-and-brass design system ([docs/DESIGN.md](docs/DESIGN.md)), sounds, demo reset, the Windows installer and the extension package.                                                          |
+| 7 · Baton Live             | The browser version: demo sites rendered per visitor, DOM hands shared with the extension, push-to-talk and typed requests, the guided tour, and the rate-limited model proxy with its key check. |

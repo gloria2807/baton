@@ -1,5 +1,6 @@
 // The Baseten client for Muse Spark Open, following the Stage 0 model contract in docs/SPEC.md.
-// Only the Electron main process constructs this; the API key never leaves it.
+// The desktop app constructs this in its main process with the key, which never leaves it. Baton Live
+// constructs it in the browser pointed at its own proxy, with no key at all: the proxy adds it.
 
 import OpenAI from 'openai';
 import { z } from 'zod';
@@ -97,8 +98,15 @@ function* balancedObjects(s: string): Generator<string> {
   }
 }
 
+// Base64 without Node's Buffer, so the client also runs in a browser.
+export function toBase64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 export function audioPart(wav: Uint8Array): Part {
-  const url = `data:audio/wav;base64,${Buffer.from(wav).toString('base64')}`;
+  const url = `data:audio/wav;base64,${toBase64(wav)}`;
   // Baseten's audio_url part mirrors image_url; the OpenAI SDK types do not know it.
   return { type: 'audio_url', audio_url: { url } } as unknown as Part;
 }
@@ -115,12 +123,15 @@ export class Model {
 
   // With a governor, every call is counted against the daily budget, limited in concurrency and
   // retried patiently on rate limits; the SDK's own retries are then turned off.
+  // `proxyURL` (Baton Live): send calls to that proxy instead of Baseten. The proxy holds the key, so
+  // `apiKey` is then only a placeholder.
   constructor(
     apiKey: string,
     readonly governor?: Governor,
+    proxyURL?: string,
   ) {
     if (!apiKey) throw new Error('BASETEN_API_KEY is not set');
-    this.client = new OpenAI({ baseURL: BASE_URL, apiKey, maxRetries: governor ? 0 : 2, timeout: 60000 });
+    this.client = new OpenAI({ baseURL: proxyURL ?? BASE_URL, apiKey, maxRetries: governor ? 0 : 2, timeout: 60000, dangerouslyAllowBrowser: !!proxyURL });
   }
 
   private create(params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming): Promise<OpenAI.Chat.Completions.ChatCompletion> {
@@ -247,3 +258,4 @@ export class Model {
     ]);
   }
 }
+export * from './brain.js';

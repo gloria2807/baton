@@ -26,11 +26,12 @@ export const Action = z.discriminatedUnion('tool', [
   z.object({ tool: z.literal('fill_cells'), mark, rows: Rows }),
   z.object({ tool: z.literal('scroll'), direction: z.enum(['up', 'down']).optional(), mark: mark.optional() }),
   // Pull facts from the page into the lane's notes, e.g. "the price and airline of the top 3 results".
-  z.object({ tool: z.literal('read'), what: z.string().min(1).max(300) }),
+  z.object({ tool: z.literal('read'), what: z.string().min(1).transform((s) => s.trim().slice(0, 300)) }),
   z.object({ tool: z.literal('extract_list'), item: z.string().min(1).max(200), fields: z.array(z.string()).min(1).max(12), max: z.coerce.number().int().min(1).max(50).default(10) }),
   z.object({ tool: z.literal('wait_for'), text: z.coerce.string().min(1).max(200) }),
   z.object({ tool: z.literal('back') }),
-  z.object({ tool: z.literal('ask_person'), question: z.string().min(1).max(300) }),
+  // Long questions are cut, not refused: a refused step stalls the lane over a few extra words.
+  z.object({ tool: z.literal('ask_person'), question: z.string().min(1).transform((s) => s.trim().slice(0, 600)) }),
   // Long answers are trimmed rather than rejected: a finished lane should not fail on length.
   z.object({ tool: z.literal('finish'), result: z.string().min(1).transform((s) => (s.length > 1200 ? `${s.slice(0, 1199)}…` : s)), data: z.unknown().optional() }),
 ]);

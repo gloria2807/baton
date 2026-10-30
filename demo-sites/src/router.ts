@@ -8,10 +8,7 @@ export interface Req {
   params: string[];
 }
 
-export type Res =
-  | { html: string; status?: number }
-  | { json: unknown; status?: number }
-  | { redirect: string };
+export type Res = { html: string; status?: number } | { json: unknown; status?: number } | { redirect: string };
 
 export type Handler = (req: Req) => Res;
 export type Route = [method: 'GET' | 'POST', pattern: RegExp, handler: Handler];
@@ -34,6 +31,49 @@ async function readBody(req: IncomingMessage): Promise<URLSearchParams> {
   return new URLSearchParams(text);
 }
 
+export interface Reply {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
+// One request through a site's routes. Shared by the Node server and Baton Live's service worker.
+export function dispatch(site: Site, method: string, url: URL, body: URLSearchParams): Reply {
+  for (const [m, pattern, h] of site.routes) {
+    if (m !== method) continue;
+    const match = url.pathname.match(pattern);
+    if (!match) continue;
+    try {
+      const out = h({
+        method,
+        path: url.pathname,
+        query: url.searchParams,
+        body,
+        params: match.slice(1).map(decodeURIComponent),
+      });
+      if ('redirect' in out) return { status: 303, headers: { location: out.redirect }, body: '' };
+      if ('json' in out)
+        return {
+          status: out.status ?? 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(out.json),
+        };
+      return { status: out.status ?? 200, headers: { 'content-type': 'text/html; charset=utf-8' }, body: out.html };
+    } catch (e) {
+      return {
+        status: 500,
+        headers: { 'content-type': 'text/plain' },
+        body: `Demo site error: ${(e as Error).message}`,
+      };
+    }
+  }
+  return {
+    status: 404,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+    body: `<h1>Not found</h1><p>${site.name} has no page at ${url.pathname.replace(/</g, '&lt;')}</p>`,
+  };
+}
+
 export function handler(site: Site, onReset: () => void) {
   return async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', `http://localhost:${site.port}`);
@@ -44,21 +84,7 @@ export function handler(site: Site, onReset: () => void) {
       res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
       return;
     }
-    for (const [m, pattern, h] of site.routes) {
-      if (m !== method) continue;
-      const match = url.pathname.match(pattern);
-      if (!match) continue;
-      try {
-        const body = await readBody(req);
-        const out = h({ method, path: url.pathname, query: url.searchParams, body, params: match.slice(1).map(decodeURIComponent) });
-        if ('redirect' in out) res.writeHead(303, { location: out.redirect }).end();
-        else if ('json' in out) res.writeHead(out.status ?? 200, { 'content-type': 'application/json' }).end(JSON.stringify(out.json));
-        else res.writeHead(out.status ?? 200, { 'content-type': 'text/html; charset=utf-8' }).end(out.html);
-      } catch (e) {
-        res.writeHead(500, { 'content-type': 'text/plain' }).end(`Demo site error: ${(e as Error).message}`);
-      }
-      return;
-    }
-    res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' }).end(`<h1>Not found</h1><p>${site.name} has no page at ${url.pathname.replace(/</g, '&lt;')}</p>`);
+    const out = dispatch(site, method, url, await readBody(req));
+    res.writeHead(out.status, out.headers).end(out.body);
   };
 }

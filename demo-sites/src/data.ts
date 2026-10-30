@@ -49,9 +49,26 @@ export interface Invoice {
 }
 
 const VENDOR_STEMS = [
-  'Kestrel', 'Bluefin', 'Copperleaf', 'Ironbark', 'Saltmarsh', 'Juniper', 'Larkspur', 'Meridian',
-  'Oakhurst', 'Pinecrest', 'Redfern', 'Silverline', 'Thornbury', 'Upland', 'Westbrook', 'Harrow',
-  'Fennel', 'Granite Bay', 'Hollis', 'Marlow',
+  'Kestrel',
+  'Bluefin',
+  'Copperleaf',
+  'Ironbark',
+  'Saltmarsh',
+  'Juniper',
+  'Larkspur',
+  'Meridian',
+  'Oakhurst',
+  'Pinecrest',
+  'Redfern',
+  'Silverline',
+  'Thornbury',
+  'Upland',
+  'Westbrook',
+  'Harrow',
+  'Fennel',
+  'Granite Bay',
+  'Hollis',
+  'Marlow',
 ];
 const VENDOR_KINDS: Array<[string, string, string]> = [
   ['Print Works', 'Printing', 'Event brochures and badges'],
@@ -74,7 +91,7 @@ function buildInvoices(): Invoice[] {
     out.push({
       vendor: `${stem} ${kind}`,
       number: `INV-${String(2300 + i * 7 + Math.floor(r() * 5)).padStart(4, '0')}`,
-      amountCents: Math.round((60 + r() * 2400) * 100 / 5) * 5,
+      amountCents: Math.round(((60 + r() * 2400) * 100) / 5) * 5,
       due: `2026-11-${String(day).padStart(2, '0')}`,
       category,
       description,
@@ -87,8 +104,16 @@ export const INVOICES = buildInvoices();
 
 function invoiceEmail(inv: Invoice, i: number): Email {
   const amount = '$' + (inv.amountCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 });
-  const dueText = new Date(inv.due + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-  const slug = inv.vendor.toLowerCase().replace(/[^a-z]+/g, '-').replace(/-+$/, '');
+  const dueText = new Date(inv.due + 'T12:00:00Z').toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+  const slug = inv.vendor
+    .toLowerCase()
+    .replace(/[^a-z]+/g, '-')
+    .replace(/-+$/, '');
   return {
     id: `inv-${i + 1}`,
     from: { name: `${inv.vendor} Billing`, email: `billing@${slug}.example` },
@@ -215,6 +240,8 @@ export interface Booking {
   email: string;
   totalCents: number;
   status: 'awaiting-payment' | 'confirmed';
+  // What is being bought, in words, as a real checkout shows it.
+  summary?: string;
 }
 
 export interface SheetRow {
@@ -242,9 +269,36 @@ export function freshState(): State {
     ],
     drafts: [],
     bills: [
-      { number: 'BL-0418', vendor: 'Northgate Paper Co', reference: 'NP-7781', amountCents: 124000, due: '2026-10-20', category: 'Office', notes: '', status: 'Paid' },
-      { number: 'BL-0419', vendor: 'Quarry Coffee Supply', reference: 'QC-1042', amountCents: 38650, due: '2026-11-02', category: 'Meals', notes: '', status: 'Due' },
-      { number: 'BL-0420', vendor: 'Brightwire Internet', reference: 'BW-55120', amountCents: 12900, due: '2026-11-05', category: 'Software', notes: '', status: 'Due' },
+      {
+        number: 'BL-0418',
+        vendor: 'Northgate Paper Co',
+        reference: 'NP-7781',
+        amountCents: 124000,
+        due: '2026-10-20',
+        category: 'Office',
+        notes: '',
+        status: 'Paid',
+      },
+      {
+        number: 'BL-0419',
+        vendor: 'Quarry Coffee Supply',
+        reference: 'QC-1042',
+        amountCents: 38650,
+        due: '2026-11-02',
+        category: 'Meals',
+        notes: '',
+        status: 'Due',
+      },
+      {
+        number: 'BL-0420',
+        vendor: 'Brightwire Internet',
+        reference: 'BW-55120',
+        amountCents: 12900,
+        due: '2026-11-05',
+        category: 'Software',
+        notes: '',
+        status: 'Due',
+      },
     ],
     bookings: [],
     sheet: { columns: ['A', 'B', 'C', 'D'], rows: Array.from({ length: 12 }, () => ({ cells: ['', '', '', ''] })) },
@@ -293,12 +347,63 @@ const AIRLINES = ['Tagus Airways', 'Sahel Wings', 'Atlantica Air', 'Harmattan Ai
 // Lagos→Lisbon is hand-written so the film's beats are stable: the best overall pick is $212,
 // and the only fare under $200 is $186 with one stop.
 const LOS_LIS: Array<Omit<Flight, 'id' | 'from' | 'to' | 'date'>> = [
-  { airline: 'Tagus Airways', code: 'TG 1504', depart: '07:40', arrive: '14:35', durationMin: 355, stops: 0, priceCents: 21200 },
-  { airline: 'Sahel Wings', code: 'SW 311', depart: '06:15', arrive: '17:05', durationMin: 590, stops: 1, via: 'Madrid', priceCents: 18600 },
-  { airline: 'Atlantica Air', code: 'AA 88', depart: '10:20', arrive: '17:20', durationMin: 360, stops: 0, priceCents: 24500 },
-  { airline: 'Harmattan Air', code: 'HA 702', depart: '13:55', arrive: '23:40', durationMin: 525, stops: 1, via: 'Accra', priceCents: 20400 },
-  { airline: 'Meridia', code: 'MD 19', depart: '22:10', arrive: '05:15', durationMin: 365, stops: 0, priceCents: 29800 },
-  { airline: 'Atlantica Air', code: 'AA 94', depart: '16:30', arrive: '06:10', durationMin: 760, stops: 2, via: 'Accra, Madrid', priceCents: 19900 },
+  {
+    airline: 'Tagus Airways',
+    code: 'TG 1504',
+    depart: '07:40',
+    arrive: '14:35',
+    durationMin: 355,
+    stops: 0,
+    priceCents: 21200,
+  },
+  {
+    airline: 'Sahel Wings',
+    code: 'SW 311',
+    depart: '06:15',
+    arrive: '17:05',
+    durationMin: 590,
+    stops: 1,
+    via: 'Madrid',
+    priceCents: 18600,
+  },
+  {
+    airline: 'Atlantica Air',
+    code: 'AA 88',
+    depart: '10:20',
+    arrive: '17:20',
+    durationMin: 360,
+    stops: 0,
+    priceCents: 24500,
+  },
+  {
+    airline: 'Harmattan Air',
+    code: 'HA 702',
+    depart: '13:55',
+    arrive: '23:40',
+    durationMin: 525,
+    stops: 1,
+    via: 'Accra',
+    priceCents: 20400,
+  },
+  {
+    airline: 'Meridia',
+    code: 'MD 19',
+    depart: '22:10',
+    arrive: '05:15',
+    durationMin: 365,
+    stops: 0,
+    priceCents: 29800,
+  },
+  {
+    airline: 'Atlantica Air',
+    code: 'AA 94',
+    depart: '16:30',
+    arrive: '06:10',
+    durationMin: 760,
+    stops: 2,
+    via: 'Accra, Madrid',
+    priceCents: 19900,
+  },
 ];
 
 function hash(s: string): number {
@@ -340,12 +445,60 @@ export function findFlight(id: string): Flight | undefined {
 }
 
 export const HOTELS: Hotel[] = [
-  { id: 'casa-doca', name: 'Casa Doca', area: 'Cais do Sodré', walkMinToVenue: 2, rating: 4.8, nightlyCents: 34000, perks: ['Breakfast', 'River view'] },
-  { id: 'ribeira-azul', name: 'Hotel Ribeira Azul', area: 'Cais do Sodré', walkMinToVenue: 6, rating: 4.5, nightlyCents: 16800, perks: ['Breakfast', 'Free cancellation'] },
-  { id: 'lumen', name: 'Lumen Lisboa', area: 'Chiado', walkMinToVenue: 9, rating: 4.6, nightlyCents: 19200, perks: ['Gym'] },
-  { id: 'patio-verde', name: 'Pátio Verde Guesthouse', area: 'Bica', walkMinToVenue: 12, rating: 4.2, nightlyCents: 13900, perks: ['Free cancellation'] },
-  { id: 'alfama-loft', name: 'Alfama Loft Rooms', area: 'Alfama', walkMinToVenue: 31, rating: 4.4, nightlyCents: 11900, perks: [] },
-  { id: 'aero-inn', name: 'Aero Inn Lisbon Airport', area: 'Airport', walkMinToVenue: 95, rating: 3.9, nightlyCents: 9800, perks: ['Airport shuttle'] },
+  {
+    id: 'casa-doca',
+    name: 'Casa Doca',
+    area: 'Cais do Sodré',
+    walkMinToVenue: 2,
+    rating: 4.8,
+    nightlyCents: 34000,
+    perks: ['Breakfast', 'River view'],
+  },
+  {
+    id: 'ribeira-azul',
+    name: 'Hotel Ribeira Azul',
+    area: 'Cais do Sodré',
+    walkMinToVenue: 6,
+    rating: 4.5,
+    nightlyCents: 16800,
+    perks: ['Breakfast', 'Free cancellation'],
+  },
+  {
+    id: 'lumen',
+    name: 'Lumen Lisboa',
+    area: 'Chiado',
+    walkMinToVenue: 9,
+    rating: 4.6,
+    nightlyCents: 19200,
+    perks: ['Gym'],
+  },
+  {
+    id: 'patio-verde',
+    name: 'Pátio Verde Guesthouse',
+    area: 'Bica',
+    walkMinToVenue: 12,
+    rating: 4.2,
+    nightlyCents: 13900,
+    perks: ['Free cancellation'],
+  },
+  {
+    id: 'alfama-loft',
+    name: 'Alfama Loft Rooms',
+    area: 'Alfama',
+    walkMinToVenue: 31,
+    rating: 4.4,
+    nightlyCents: 11900,
+    perks: [],
+  },
+  {
+    id: 'aero-inn',
+    name: 'Aero Inn Lisbon Airport',
+    area: 'Airport',
+    walkMinToVenue: 95,
+    rating: 3.9,
+    nightlyCents: 9800,
+    perks: ['Airport shuttle'],
+  },
 ];
 
 export const SESSIONS = [

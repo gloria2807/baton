@@ -28,3 +28,15 @@ export function profileLines(p: Profile): string {
   const lines = (Object.keys(PROFILE_LABELS) as Array<keyof Profile>).filter((k) => p[k].trim()).map((k) => `- ${PROFILE_LABELS[k]}: ${p[k].trim()}`);
   return lines.length ? lines.join('\n') : '(empty)';
 }
+
+// Every lane goal carries the person's own details, so a lane that meets a form asking for a name
+// or email uses the profile instead of stopping to ask or, worse, making one up. The planner is
+// asked to copy them into goals; this makes it certain.
+export function goalWithProfile(goal: string, p: Profile): string {
+  const facts = [p.name && `name ${p.name}`, p.workEmail && `email ${p.workEmail}`, p.homeCity && `home city ${p.homeCity}`, p.homeAirport && `home airport ${p.homeAirport}`]
+    .filter(Boolean)
+    .join(', ');
+  return facts ? `${goal}
+
+The person's own details, to use only where a form asks for them: ${facts}.` : goal;
+}

@@ -1,0 +1,439 @@
+/* Baton Live. The Podium's material (docs/DESIGN.md) as a full page: ink and brass, solid
+   surfaces, one accent, sentence case. The demo sites stay paper-white, like windows on a desk. */
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  user-select: none;
+}
+body {
+  margin: 0;
+}
+
+.live {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+/* ── The Podium bar ── */
+.live .bar {
+  -webkit-app-region: no-drag;
+  height: auto;
+  min-height: 68px;
+  grid-template-columns: 28px minmax(200px, 1fr) minmax(180px, 340px) auto auto;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  row-gap: 0;
+  padding: 10px 16px 6px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.live .bar .mark {
+  grid-row: 1 / 3;
+  align-self: center;
+}
+.live .bar .center {
+  grid-row: 1 / 3;
+  align-self: center;
+}
+.live .bar .main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.live .bar .main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live .bar .main.notice.warn {
+  font-size: 15px;
+}
+.live .bar .sub.warn {
+  color: var(--alert);
+}
+.live .bar .wave {
+  height: 22px;
+  flex: none;
+}
+.live .bar .wave span {
+  height: 22px;
+}
+
+.ask input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13.5px;
+}
+.ask input::placeholder {
+  color: #6f6a72;
+}
+
+.btn.talk {
+  height: 36px;
+  padding: 0 16px;
+  touch-action: none;
+  user-select: none;
+}
+.btn.talk.held {
+  background: var(--paper);
+  color: var(--ink);
+}
+.tools {
+  display: flex;
+  gap: 8px;
+}
+.tools .btn {
+  height: 36px;
+}
+.spend {
+  grid-column: 3 / 6;
+  justify-self: end;
+  font-size: 12px;
+  color: var(--paper-2);
+  padding-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The desk: the visitor's browser and the stage ── */
+.desk {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(400px, 38%) 1fr;
+}
+
+.home {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  border-right: 1px solid var(--line);
+}
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+}
+.tabs .btn.small {
+  padding: 2px 10px;
+  font-size: 16px;
+  line-height: 22px;
+  margin-right: 6px;
+}
+.tab {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 7px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--paper-2);
+}
+.tab:hover {
+  color: var(--paper);
+}
+.tab.on {
+  background: var(--ink-2);
+  color: var(--paper);
+}
+.where {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--paper-2);
+}
+.home iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Lanes: each one a window, framed in its colour ── */
+.grid {
+  height: 100%;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+.grid.n1 {
+  grid-template-columns: 1fr;
+}
+.grid.n2 {
+  grid-template-columns: 1fr 1fr;
+}
+.grid.n3,
+.grid.n4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.tile {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 34px 1fr;
+  border: 2px solid var(--c);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ink-2);
+}
+.tile-head {
+  display: grid;
+  grid-template-columns: 10px auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.tile-head i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--c);
+}
+.tile-line {
+  color: var(--paper-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile.state-waiting-approval .tile-line,
+.tile.state-waiting-person .tile-line {
+  color: var(--brass);
+}
+.tile.state-paused-injection .tile-line,
+.tile.state-stopped .tile-line {
+  color: var(--alert);
+}
+.tile.state-done .tile-line {
+  color: var(--paper);
+}
+.tile-step {
+  color: var(--paper-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.tile-body {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+}
+.tile-body iframe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 0;
+  transform-origin: 0 0;
+  background: #fff;
+}
+
+/* ── Cards: docked over the stage, the way they sit under the Podium on the desktop ── */
+.cards {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: min(460px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.7);
+  animation: card-in 180ms var(--ease);
+}
+.cards > * + * {
+  border-top: 1px solid var(--line);
+}
+@keyframes card-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+
+/* ── The tour, shown while the stage is empty ── */
+.tour {
+  height: 100%;
+  overflow: auto;
+  padding: 56px clamp(32px, 6vw, 96px);
+  max-width: 860px;
+  user-select: text;
+}
+.tour h1 {
+  margin: 0 0 14px;
+  font-size: 34px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.lede {
+  margin: 0 0 32px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--paper-2);
+  max-width: 64ch;
+}
+.cues {
+  list-style: none;
+  counter-reset: cue;
+  margin: 0;
+  padding: 0;
+}
+.cues li {
+  counter-increment: cue;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: 8px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.cues li::before {
+  content: counter(cue);
+  grid-row: 1 / 4;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--brass);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.cue-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.cues p {
+  margin: 6px 0 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--paper-2);
+  max-width: 62ch;
+}
+.cues q {
+  color: var(--paper);
+  quotes: '“' '”';
+}
+.cues em {
+  font-style: normal;
+  color: var(--paper);
+}
+.cues .btn {
+  justify-self: start;
+}
+.fine {
+  margin: 24px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--paper-2);
+  max-width: 66ch;
+}
+
+/* ── Receipts ── */
+.receipts {
+  height: 100%;
+  overflow: auto;
+  padding: 28px 32px 120px;
+  user-select: text;
+}
+.receipts section {
+  margin-bottom: 28px;
+}
+.receipts h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.receipts h3 i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--c);
+}
+.receipts h3 span {
+  font-weight: 420;
+  font-size: 12.5px;
+  color: var(--paper-2);
+  font-variant-numeric: tabular-nums;
+}
+.receipts ol {
+  margin: 0;
+  padding-left: 40px;
+}
+.receipts li {
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.receipts li::marker {
+  color: var(--paper-2);
+  font-variant-numeric: tabular-nums;
+}
+.receipts .what {
+  display: block;
+  font-weight: 560;
+  overflow-wrap: anywhere;
+}
+.receipts .why {
+  display: block;
+  color: var(--paper-2);
+}
+.receipts .check {
+  display: block;
+  font-size: 12px;
+  color: var(--done);
+}
+.receipts li.miss .check {
+  color: var(--alert);
+}
+
+/* ── Pins: where the pointer rested while the talk key was held ── */
+.pin {
+  position: fixed;
+  z-index: 10;
+  width: 24px;
+  height: 24px;
+  margin: -30px 0 0 -4px;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  border-radius: 12px 12px 12px 2px;
+  background: var(--brass);
+  color: var(--brass-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.narrow {
+  display: none;
+}
+@media (max-width: 959px) {
+  .live > :not(.narrow) {
+    display: none;
+  }
+  .narrow {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    padding: 32px;
+    text-align: center;
+    font-size: 17px;
+    color: var(--paper);
+  }
+}

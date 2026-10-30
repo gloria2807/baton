@@ -22,14 +22,13 @@ let layer: HTMLElement | null = null;
 
 const STYLE = `
 :host{all:initial}
-.layer{position:fixed;inset:0;pointer-events:none;z-index:2147483646;font:700 14px/1 "Inter","Segoe UI",system-ui,sans-serif}
-.outline{position:fixed;border-radius:8px;box-shadow:0 0 0 2px rgba(139,155,255,.95),0 0 0 7px rgba(139,155,255,.22);transition:opacity .6s ease}
-.pin{position:fixed;width:30px;height:30px;margin:-38px 0 0 -15px;display:grid;place-items:center;border-radius:50% 50% 50% 4px;
-  transform:rotate(-45deg);background:linear-gradient(135deg,#8b9bff,#6d5cff);color:#fff;box-shadow:0 6px 18px rgba(80,70,220,.45);
-  animation:drop .45s cubic-bezier(.22,1,.36,1);transition:opacity .6s ease}
-.pin span{transform:rotate(45deg)}
+.layer{position:fixed;inset:0;pointer-events:none;z-index:2147483646;font:700 13px/1 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.outline{position:fixed;border-radius:6px;outline:2px solid #c99a3b;outline-offset:2px;transition:opacity .4s ease}
+.pin{position:fixed;width:26px;height:26px;margin:-34px 0 0 -13px;display:grid;place-items:center;border-radius:6px 6px 6px 1px;
+  background:#c99a3b;color:#1d160a;box-shadow:0 2px 6px rgba(0,0,0,.35);
+  animation:drop .18s cubic-bezier(.2,.7,.2,1);transition:opacity .4s ease}
 .fade{opacity:0}
-@keyframes drop{from{transform:rotate(-45deg) translate(-14px,-14px) scale(.4);opacity:0}}
+@keyframes drop{from{transform:translateY(-6px);opacity:0}}
 `;
 
 function ensureLayer(): HTMLElement {
@@ -49,7 +48,7 @@ function drawPin(n: number, point: { x: number; y: number }, rect: Rect) {
   Object.assign(outline.style, { left: `${rect.x - 4}px`, top: `${rect.y - 4}px`, width: `${rect.w + 8}px`, height: `${rect.h + 8}px` });
   const pin = document.createElement('div');
   pin.className = 'pin';
-  pin.innerHTML = `<span>${n}</span>`;
+  pin.textContent = String(n);
   Object.assign(pin.style, { left: `${point.x}px`, top: `${point.y}px` });
   l.append(outline, pin);
 }

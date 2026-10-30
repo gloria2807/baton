@@ -11,6 +11,7 @@ let win: BrowserWindow | null = null;
 
 interface Frame {
   n: number;
+  atMs: number; // when the step ended, from the start of the run
   thinking: string;
   action: string;
   reason: string;
@@ -21,7 +22,7 @@ interface Frame {
   image?: string;
 }
 
-function frames(dir: string): Frame[] {
+function frames(dir: string, runStart: number): Frame[] {
   const file = join(dir, 'steps.jsonl');
   if (!existsSync(file)) return [];
   return readFileSync(file, 'utf8')
@@ -32,6 +33,7 @@ function frames(dir: string): Frame[] {
     .slice(0, 40)
     .map((s) => ({
       n: s.n,
+      atMs: Math.max(0, Date.parse(s.at) - runStart),
       thinking: s.thinking,
       action: `${s.action.tool}${s.action.mark !== undefined ? ` [${s.action.mark}]` : ''}${s.action.url ? ` ${s.action.url}` : ''}${s.action.text ? ` “${String(s.action.text).slice(0, 40)}”` : ''}`,
       reason: s.reason,
@@ -67,7 +69,7 @@ export function loadScore(runId: string) {
       ...p,
       goal: r.score.parts.find((x: { id: string }) => x.id === p.id)?.goal,
       // A redirected lane has several attempts; show them in order.
-      attempts: p.receipts.map((dir) => frames(dir)),
+      attempts: p.receipts.map((dir) => frames(dir, Date.parse(r.startedAt))),
     })),
   };
 }

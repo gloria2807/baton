@@ -3,7 +3,7 @@
 // injection warnings, answerable by click or by voice.
 
 import { screen } from 'electron';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import { join } from 'node:path';
 import {
@@ -179,6 +179,19 @@ export class Conductor {
     this.publishCards();
     log(`card ${id} (${p.card.kind}) answered: ${'choice' in a ? a.choice : 'text'}`);
     p.resolve(a);
+  }
+
+  // Demo mode: back to the starting state of docs/DEMO_SCRIPT.md. Only between runs, so no lane is cut off mid-action.
+  reset(): boolean {
+    if (this.busy || this.run || this.rehearsal) return false;
+    for (const id of [...this.cards.keys()]) this.answer(id, { choice: 'dismiss' });
+    this.lanes.clear();
+    this.publishLanes();
+    this.routine = null;
+    rmSync(join(outDir('routines'), 'latest.json'), { force: true });
+    this.send('podium:reset', null);
+    log('demo reset: cards, lanes and the learned routine cleared');
+    return true;
   }
 
   // A spoken cue first answers whatever card is waiting; returns true if it did. A cue that points
@@ -506,7 +519,7 @@ export class Conductor {
       return;
     }
     await this.bridge.request({ op: 'recordStart' });
-    const answer = this.show({ kind: 'rehearsal', laneId: 'rehearsal', laneName: 'Watching you', color: '#ef4444', steps: [], recording: true });
+    const answer = this.show({ kind: 'rehearsal', laneId: 'rehearsal', laneName: 'Watching you', color: '#c99a3b', steps: [], recording: true });
     this.rehearsal = { startedAt: Date.now(), steps: [], cardId: this.nextCard - 1 };
     log('rehearsal started');
     this.send('speak', 'Watching. Do it once, and tell me what matters as you go. Say “that’s it” when you are done.');
@@ -551,7 +564,7 @@ export class Conductor {
       writeFileSync(join(outDir('routines'), 'latest.json'), JSON.stringify(this.routine, null, 2));
       log(`routine compiled: ${out.value.name} (${out.value.variables.length} variables, ${out.value.steps.length} steps, ${Math.round(out.ms)} ms)`);
       this.send('speak', `Got it: ${out.value.name}. Say “now do the rest” when you are ready.`);
-      const edit = await this.show({ kind: 'routine', laneId: 'routine', laneName: 'Routine', color: '#ef4444', routine: this.routine });
+      const edit = await this.show({ kind: 'routine', laneId: 'routine', laneName: 'Routine', color: '#c99a3b', routine: this.routine });
       if ('text' in edit) this.applyRoutineEdits(edit.text);
     } catch (e) {
       this.send('podium:notice', `Could not learn the routine: ${(e as Error).message}`);
@@ -595,7 +608,7 @@ export class Conductor {
     this.send('podium:notice', 'Finding the rest…');
     let links: Array<{ name: string; href: string }>;
     try {
-      await this.bridge.request({ op: 'openLane', laneId: 'finder', url: source, color: '#ef4444', title: 'Finding the items', bounds: this.laneBounds() }, 30000);
+      await this.bridge.request({ op: 'openLane', laneId: 'finder', url: source, color: '#c99a3b', title: 'Finding the items', bounds: this.laneBounds() }, 30000);
       const look = LookResult.parse(await this.bridge.request({ op: 'look', laneId: 'finder', screenshot: false }, 30000));
       links = look.elements.filter((e) => e.href && e.name).map((e) => ({ name: e.name, href: e.href! }));
     } finally {
@@ -617,7 +630,7 @@ export class Conductor {
       kind: 'approval',
       laneId: 'routine',
       laneName: routine.name,
-      color: '#ef4444',
+      color: '#c99a3b',
       summary: `Perform “${routine.name}” for ${items.length} ${routine.itemKind}s`,
       reason: `Each saves one entry${hosts.length ? ` on ${hosts.join(', ')}` : ''}. Payments, sending and deleting still ask you one by one.`,
     });

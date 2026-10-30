@@ -4,10 +4,19 @@ import { join, resolve } from 'node:path';
 import { isWellFormedToken, newPairingToken } from '@baton/core';
 
 // In development the app runs from apps/desktop; the repository root holds .env and out/.
+// Installed, everything Baton writes lives in its user data folder.
 export const repoRoot = resolve(app.getAppPath(), '../..');
+const home = () => (app.isPackaged ? app.getPath('userData') : repoRoot);
 
 export function outDir(...parts: string[]): string {
-  const dir = join(repoRoot, 'out', ...parts);
+  const dir = join(home(), 'out', ...parts);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Receipts: every step a lane took, kept on this computer.
+export function receiptsDir(...parts: string[]): string {
+  const dir = join(home(), 'receipts', ...parts);
   mkdirSync(dir, { recursive: true });
   return dir;
 }

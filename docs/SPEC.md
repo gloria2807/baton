@@ -220,6 +220,7 @@ At $1.25 per million input tokens and $4.25 per million output tokens:
 - Planning call at `low` (270 in, ~700 out, before real profile and anchors): **≈ $0.0033**.
 - Cue transcription (≈200–300 in, ~100–350 out): **≈ $0.001**.
 - Each image step is ~1650 tokens, so a 2M tokens-per-minute limit would allow about 1200 image steps per minute. Eight lanes at ~5 s per step use about 100 steps per minute, so the lane limit and step latency bound throughput, not TPM. We did not measure the TPM limit; this uses the figure the spec gives.
+- **Measured in Stage 5:** a 39-item perform at 8 lanes, with full-page prompts, sent 1.56 M input tokens in a few minutes ($2.29) and 12 lanes got HTTP 429. Baton now caps model calls in flight at 3, retries 429 and 5xx with backoff that honours `Retry-After`, performs routines 4 lanes at a time, trims prompts to 80 elements and 2,500 characters of page text, and stops at a daily spend cap (default $3, `packages/model/src/governor.ts`).
 
 ## Out of scope
 

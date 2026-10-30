@@ -6,6 +6,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LookResult, RecordedStep, TALK_KEYS, isTalkKeyId, type Anchor, type TalkKeyId } from '@baton/core';
 import { Governor, Model, type SpendState } from '@baton/model';
+// @ts-expect-error: a plain .mjs module shared with the extension build
+import { iconPng } from '../../../../scripts/icon.mjs';
 import { runBench } from './bench';
 import { runMultiBench } from './bench-multi';
 import { BridgeServer } from './bridge-server';
@@ -89,26 +91,9 @@ function createPodium() {
   podium.once('ready-to-show', () => podium?.showInactive());
 }
 
-// Tray icon drawn in code: a dark tile with four lane-coloured dots.
+// The tray shows Baton's icon (scripts/icon.mjs): an ink tile with a brass baton.
 function trayIcon() {
-  const size = 32;
-  const buf = Buffer.alloc(size * size * 4);
-  const lanes = [[246, 130, 59], [94, 197, 34], [22, 115, 249], [247, 85, 168]]; // BGR order
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4;
-      const r = 7;
-      const cx = Math.min(Math.max(x + 0.5, r), size - r);
-      const cy = Math.min(Math.max(y + 0.5, r), size - r);
-      if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > r) continue;
-      buf.set([30, 19, 16, 255], i);
-      lanes.forEach(([b, g, rr], k) => {
-        const dx = size * (k % 2 ? 0.66 : 0.34);
-        const dy = size * (k < 2 ? 0.34 : 0.66);
-        if (Math.hypot(x + 0.5 - dx, y + 0.5 - dy) <= 4.5) buf.set([b!, g!, rr!, 255], i);
-      });
-    }
-  return nativeImage.createFromBitmap(buf, { width: size, height: size });
+  return nativeImage.createFromBuffer(iconPng(32));
 }
 
 function refreshTray() {
@@ -341,6 +326,9 @@ function handleArgs(argv: string[]) {
       writeFileSync(join(outDir('selftest'), 'podium.png'), img.toPNG());
       log('podium snapshot saved');
     });
+
+  // npm run demo:reset hands this over, to clear the Podium for a fresh take.
+  if (argv.includes('--demo-reset')) log(conductor.reset() ? 'podium reset for the demo' : 'demo reset skipped: lanes are running');
 
   // Pick up a rebuilt extension.
   if (argv.includes('--reload-extension')) void whenPaired(() => bridge.request({ op: 'reloadExtension' }), 'reload-extension');

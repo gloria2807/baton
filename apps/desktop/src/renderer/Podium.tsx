@@ -75,13 +75,26 @@ export function Podium() {
     const offs = [
       window.baton.onExtension((s) => setExtension(s as 'connected' | 'waiting')),
       window.baton.onShowPairing(() => setPanel(true)),
+      window.baton.onReset(() => {
+        setPanel(false);
+        setAnchors([]);
+        setPhase({ kind: 'idle' });
+      }),
       window.baton.onNotice((t) => setPhase({ kind: 'notice', text: String(t), tone: toneOf(String(t)) })),
-      window.baton.onLanes((l) => setLanes(l as LaneView[])),
+      window.baton.onLanes((l) => {
+        const next = l as LaneView[];
+        setLanes((prev) => {
+          if (!prev.length && next.length) sounds.lanesStart();
+          else if (next.some((n) => n.state === 'done' && prev.find((p) => p.laneId === n.laneId)?.state !== 'done')) sounds.laneDone();
+          return next;
+        });
+      }),
       window.baton.onAnchors((a) => setAnchors(a as Array<{ n: number; label: string; source: string }>)),
       window.baton.onSpeak((t) => speak(String(t))),
       window.baton.onCards((c) => {
         const next = c as Card[];
         setCards((prev) => {
+          if (next.some((x) => x.kind === 'score' && x.done && !prev.some((p) => p.id === x.id))) sounds.allDone();
           if (next.some((x) => x.kind !== 'result' && !prev.some((p) => p.id === x.id))) sounds.heard();
           return next;
         });

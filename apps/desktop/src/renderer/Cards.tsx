@@ -1,4 +1,5 @@
 // Lane chips and the cards that wait for the person: approval, question, injection, result.
+import { useState } from 'react';
 
 export interface LaneView {
   laneId: string;
@@ -14,6 +15,15 @@ export type Card =
   | { kind: 'question'; id: number; laneId: string; laneName: string; color: string; question: string }
   | { kind: 'injection'; id: number; laneId: string; laneName: string; color: string; url: string; findings: Array<{ source: string; text: string }> }
   | { kind: 'result'; id: number; laneId: string; laneName: string; color: string; status: string; result: string; detail: string }
+  | { kind: 'rehearsal'; id: number; laneId: string; laneName: string; color: string; steps: string[]; recording: boolean }
+  | {
+      kind: 'routine';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      routine: { name: string; summary: string; itemKind: string; variables: Array<{ name: string; description: string; example: string }>; steps: Array<{ do: string }> };
+    }
   | {
       kind: 'score';
       id: number;
@@ -72,15 +82,70 @@ function Head({ card, label }: { card: Card; label: string }) {
 
 const PART_STATE: Record<string, string> = { done: 'done', stopped: 'stopped', failed: 'failed', skipped: 'skipped', running: 'working', waiting: 'waiting', 'waiting-approval': 'needs your yes' };
 
+// The learned routine, with its variables editable before Baton performs it.
+function RoutineCard({ card }: { card: Extract<Card, { kind: 'routine' }> }) {
+  const [vars, setVars] = useState(card.routine.variables.map((v) => ({ name: v.name, description: v.description })));
+  const changed = vars.some((v, i) => v.name !== card.routine.variables[i]!.name || v.description !== card.routine.variables[i]!.description);
+  return (
+    <div className="card routine">
+      <Head card={card} label="learned" />
+      <div className="card-title">{card.routine.name}</div>
+      <div className="card-sub">{card.routine.summary}</div>
+      <ol className="routine-steps">
+        {card.routine.steps.map((s, i) => (
+          <li key={i}>{s.do}</li>
+        ))}
+      </ol>
+      <div className="vars">
+        {vars.map((v, i) => (
+          <div className="var" key={i}>
+            <input value={v.name} aria-label="Variable name" onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') } : x)))} />
+            <input value={v.description} aria-label="Where to find it" onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
+            <span className="example">e.g. {card.routine.variables[i]!.example}</span>
+          </div>
+        ))}
+      </div>
+      <div className="card-actions">
+        <span className="hint">Say “now do the rest” to perform it.</span>
+        <button className="btn" onClick={() => answer(card.id, changed ? { text: JSON.stringify(vars.map((v, index) => ({ index, ...v }))) } : { choice: 'dismiss' })}>
+          {changed ? 'Save changes' : 'Looks right'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function CardView({ card }: { card: Card }) {
   switch (card.kind) {
+    case 'rehearsal':
+      return (
+        <div className="card rehearsal">
+          <Head card={card} label="recording" />
+          <div className="card-title">
+            <span className="rec" /> Do it once. Say what matters as you go.
+          </div>
+          <ol className="routine-steps">
+            {card.steps.slice(-8).map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ol>
+          <div className="card-actions">
+            <span className="hint">or say “that’s it”</span>
+            <button className="btn" onClick={() => answer(card.id, { choice: 'stop' })}>
+              Finish
+            </button>
+          </div>
+        </div>
+      );
+    case 'routine':
+      return <RoutineCard card={card} />;
     case 'score':
       return (
         <div className={`card score ${card.approvals.length ? 'approval' : ''}`}>
           <Head card={card} label={card.done ? 'all done' : card.approvals.length ? 'needs your yes' : 'working'} />
           <div className="card-title">{card.headline}</div>
           <ul className="parts">
-            {card.parts.map((p) => (
+            {card.parts.slice(0, 8).map((p) => (
               <li key={p.name} style={{ ['--c' as string]: p.color }}>
                 <i />
                 <span className="lane-name">{p.name}</span>
@@ -88,6 +153,11 @@ export function CardView({ card }: { card: Card }) {
                 <span className="part-line">{p.line}</span>
               </li>
             ))}
+            {card.parts.length > 8 && (
+              <li className="more">
+                …and {card.parts.length - 8} more · {card.parts.filter((p) => p.status === 'done').length} of {card.parts.length} done
+              </li>
+            )}
           </ul>
           {card.approvals.length > 0 && (
             <div className="bundle">

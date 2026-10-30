@@ -42,7 +42,7 @@ export function shortValue(v: string): string {
 }
 
 export function elementLine(e: Element): string {
-  let s = `[${e.mark}] ${e.role} "${e.name}"`;
+  let s = `[${e.mark}] ${e.role} "${e.name.slice(0, 80)}"`;
   if (e.type && !['submit', 'button'].includes(e.type)) s += ` type=${e.type}`;
   if (e.value) s += ` value="${shortValue(e.value)}"`;
   if (e.options?.length) s += ` options=[${e.options.slice(0, 15).join(' | ')}]`;
@@ -56,6 +56,14 @@ export function elementLine(e: Element): string {
 function fieldValues(look: LookResult): string {
   const fields = look.elements.filter((e) => e.value !== undefined && !e.blocked && ['input', 'textarea', 'select'].includes(e.tag));
   return fields.length ? `\nForm fields:\n${fields.map((e) => `- ${e.name || e.type || e.tag}: ${e.value || '(empty)'}`).join('\n')}` : '';
+}
+
+// Every token costs: send at most 80 elements, those on screen first, in page order.
+export const MAX_PROMPT_ELEMENTS = 80;
+function promptElements(els: Element[]): Element[] {
+  if (els.length <= MAX_PROMPT_ELEMENTS) return els;
+  const keep = new Set([...els.filter((e) => !e.offscreen), ...els.filter((e) => e.offscreen)].slice(0, MAX_PROMPT_ELEMENTS));
+  return els.filter((e) => keep.has(e));
 }
 
 export interface HistoryItem {
@@ -86,8 +94,8 @@ export function decideMessages(i: DecideInput): LaneMessage[] {
     i.history.length ? `Recent steps:\n${i.history.slice(-8).map((h) => `${h.n}. ${h.action} → ${h.outcome}`).join('\n')}` : 'This is the first step.',
     i.warning ? `Warning: ${i.warning}` : '',
     `Current page: ${i.look.url}`,
-    untrusted('page title and elements', `${i.look.title}\n${i.look.elements.map(elementLine).join('\n') || '(no interactive elements visible)'}`),
-    untrusted('page text', i.look.text.slice(0, 3500)),
+    untrusted('page title and elements', `${i.look.title}\n${promptElements(i.look.elements).map(elementLine).join('\n') || '(no interactive elements visible)'}`),
+    untrusted('page text', i.look.text.slice(0, 2500)),
     i.withImage ? 'The screenshot shows the page with the same numbered marks.' : '',
   ].filter(Boolean);
   const text = lines.join('\n\n');

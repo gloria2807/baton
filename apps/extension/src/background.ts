@@ -50,15 +50,29 @@ function send(msg: FromExtension) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
+// Startup, install, the keep-alive alarm and settings changes can all call connect() at once; only
+// one attempt may run, or two sockets open and replace each other in a loop.
+let connecting = false;
+
 async function connect() {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  if (connecting || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) return;
+  connecting = true;
+  try {
+    await openSocket();
+  } finally {
+    connecting = false;
+  }
+}
+
+async function openSocket() {
   if (retryTimer) clearTimeout(retryTimer);
   const { token, port } = (await chrome.storage.local.get(['token', 'port'])) as { token?: string; port?: number };
   if (!token) return setStatus('unpaired');
   await setStatus('connecting');
   const socket = new WebSocket(`ws://127.0.0.1:${port ?? BRIDGE_PORT}`);
   ws = socket;
-  socket.onopen = () => send({ type: 'hello', token, version: PROTOCOL_VERSION, extensionVersion: chrome.runtime.getManifest().version });
+  // Say hello on this socket itself, not on whichever socket `ws` points to by then.
+  socket.onopen = () => socket.send(JSON.stringify({ type: 'hello', token, version: PROTOCOL_VERSION, extensionVersion: chrome.runtime.getManifest().version } satisfies FromExtension));
   socket.onmessage = (ev) => {
     const msg = parseFrame(ToExtension, String(ev.data));
     if (!msg) return;
@@ -212,6 +226,16 @@ async function execute(c: Command): Promise<unknown> {
     case 'cueEnd':
       if (cue?.id === c.cueId) cue = null;
       await broadcast({ kind: 'cue', active: false, keep: c.keep });
+      return true;
+
+    case 'recordStart':
+      rehearsal = { startedAt: Date.now() };
+      await broadcast({ kind: 'record', active: true });
+      return true;
+
+    case 'recordStop':
+      rehearsal = null;
+      await broadcast({ kind: 'record', active: false });
       return true;
 
     case 'reloadTab':
@@ -389,6 +413,8 @@ async function closeLane(l: Lane) {
 // ── Cues: anchors from wherever the person points ─────────────────────────
 
 let cue: { id: string; startedAt: number; n: number; keys: Map<string, number> } | null = null;
+// A rehearsal in progress: when it started, so each recorded step gets its time.
+let rehearsal: { startedAt: number } | null = null;
 
 async function broadcast(msg: ToContent) {
   for (const tab of await chrome.tabs.query({})) {
@@ -453,6 +479,15 @@ async function onRest(r: RestReport, tab: chrome.tabs.Tab | undefined): Promise<
 }
 
 chrome.runtime.onMessage.addListener((msg: ToWorker, sender, reply) => {
+  if (msg.kind === 'recording?') {
+    reply(!!rehearsal);
+    return false;
+  }
+  if (msg.kind === 'recorded') {
+    // Only the person's own tabs are recorded, never lane windows.
+    if (rehearsal && !laneByTab(sender.tab?.id)) send({ type: 'event', event: { kind: 'recorded', step: { ...msg.step, at: Date.now() - rehearsal.startedAt } as never } });
+    return false;
+  }
   if (msg.kind === 'rest') {
     onRest(msg, sender.tab).then(reply, () => reply({}));
     return true;

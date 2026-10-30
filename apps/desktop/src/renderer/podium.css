@@ -178,3 +178,13 @@ html, body, #root { margin: 0; height: 100%; background: transparent; overflow: 
 .bundle { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--glass-edge); padding-top: 12px; }
 .bundle-item { display: flex; align-items: center; gap: 12px; font-size: 13px; padding: 6px; border-radius: 10px; border-left: 3px solid var(--c); background: rgba(255, 255, 255, 0.03); }
 .bundle-item img { width: 120px; max-height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--glass-edge); }
+
+/* Rehearse, then perform */
+.card.rehearsal { border-color: rgba(239, 68, 68, 0.5); }
+.rec { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ef4444; margin-right: 6px; animation: breathe 1.2s var(--ease) infinite; }
+.routine-steps { margin: 10px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: var(--text); }
+.routine-steps li::marker { color: var(--muted); }
+.vars { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.var { display: grid; grid-template-columns: 130px 1fr auto; gap: 8px; align-items: center; }
+.var input { font: 12px inherit; font-family: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-edge); border-radius: 7px; padding: 5px 8px; }
+.var .example { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }

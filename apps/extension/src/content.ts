@@ -430,6 +430,9 @@ chrome.runtime.onMessage.addListener((msg: ToContent, _sender, reply) => {
       case 'cue':
         onCue(msg);
         return true;
+      case 'record':
+        setRecording(msg.active);
+        return true;
       case 'fillCells':
         return fillCells(msg.mark, msg.rows);
       case 'scrollBy': {
@@ -453,8 +456,77 @@ chrome.runtime.onMessage.addListener((msg: ToContent, _sender, reply) => {
   return true; // async reply
 });
 
+// ── Rehearsal recording: what the person does by hand (never in lane tabs) ──
+
+let recording = false;
+
+function report(step: Record<string, unknown>) {
+  if (!recording || lane) return;
+  chrome.runtime.sendMessage({ kind: 'recorded', step: { ...step, url: location.href } }).catch(() => undefined);
+}
+
+function reportPage() {
+  report({ type: 'navigate', title: document.title, text: (document.body?.innerText ?? '').slice(0, 6000) });
+}
+
+function setRecording(on: boolean) {
+  const was = recording;
+  recording = on;
+  if (on && !was && document.visibilityState === 'visible') reportPage();
+}
+
+document.addEventListener(
+  'click',
+  (e) => {
+    if (!recording || lane || !(e.target instanceof globalThis.Element)) return;
+    const el = e.target.closest<HTMLElement>(INTERACTIVE);
+    if (!el) return;
+    report({ type: 'click', role: roleOf(el), name: nameOf(el), href: el instanceof HTMLAnchorElement ? el.href : undefined });
+  },
+  true,
+);
+
+document.addEventListener(
+  'change',
+  (e) => {
+    const el = e.target;
+    if (!recording || lane || !(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)) return;
+    if (el instanceof HTMLInputElement && ['checkbox', 'radio', 'submit', 'button', 'hidden'].includes(el.type)) return;
+    const kind = el instanceof HTMLSelectElement ? 'select-one' : el instanceof HTMLTextAreaElement ? 'textarea' : el.type;
+    // Rule 2 applies to recordings too: a blocked field's value never leaves the page.
+    if (blockedReason(el)) return report({ type: 'input', field: nameOf(el), kind, blocked: true });
+    const value = el instanceof HTMLSelectElement ? (el.selectedOptions[0]?.text ?? el.value) : el.value;
+    report({ type: 'input', field: nameOf(el), kind, value: value.slice(0, 2000) });
+  },
+  true,
+);
+
+document.addEventListener(
+  'copy',
+  () => {
+    const text = String(window.getSelection() ?? '').trim();
+    if (text) report({ type: 'copy', text: text.slice(0, 2000) });
+  },
+  true,
+);
+
+document.addEventListener(
+  'paste',
+  (e) => {
+    const el = e.target instanceof HTMLElement ? e.target : null;
+    const text = e.clipboardData?.getData('text/plain')?.trim() ?? '';
+    if (!el || !text || blockedReason(el)) return;
+    report({ type: 'paste', field: nameOf(el), text: text.slice(0, 2000) });
+  },
+  true,
+);
+
 // On every page load, ask whether this tab is a lane and draw its chrome if so.
 chrome.runtime.sendMessage({ kind: 'whoami' }).then(
-  (info: LaneInfo | null) => applyLane(info),
+  (info: LaneInfo | null) => {
+    applyLane(info);
+    // A rehearsal may be under way: this page load is one of its steps.
+    chrome.runtime.sendMessage({ kind: 'recording?' }).then((on: boolean) => setRecording(!!on), () => undefined);
+  },
   () => undefined,
 );

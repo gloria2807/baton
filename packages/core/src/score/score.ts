@@ -3,7 +3,8 @@
 
 import { z } from 'zod';
 
-export const MAX_LANES = 8;
+export const MAX_LANES = 8; // lanes running at the same time
+export const MAX_PARTS = 60; // parts in one Score (performing a routine on many items)
 export const DEFAULT_LANE_LIMIT = 4;
 
 const id = z.string().regex(/^[a-z0-9-]{1,24}$/, 'part ids are short lowercase words, like "flights"');
@@ -11,7 +12,7 @@ const id = z.string().regex(/^[a-z0-9-]{1,24}$/, 'part ids are short lowercase w
 export const Part = z.object({
   id,
   name: z.string().transform((s) => s.replace(/\s+/g, ' ').trim().slice(0, 24)),
-  goal: z.string().min(3).max(1500),
+  goal: z.string().min(3).max(4000),
   startUrl: z.string().url(),
   dependsOn: z.array(id).default([]),
   // What a person would take to do this part by hand, for the Score view's comparison.
@@ -21,7 +22,7 @@ export type Part = z.infer<typeof Part>;
 
 export const ScoreFields = {
   title: z.string().max(80).default('Score'),
-  parts: z.array(Part).min(1).max(MAX_LANES),
+  parts: z.array(Part).min(1).max(MAX_PARTS),
   // How to merge the parts' results into one answer for the person.
   final: z.string().max(600).default('Summarise what each part found or prepared.'),
 };

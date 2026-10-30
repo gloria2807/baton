@@ -25,7 +25,8 @@ describe('Score validation', () => {
     expect(bad([part('a', ['ghost'])])).toBe(false);
     expect(bad([part('a', ['b']), part('b', ['a'])])).toBe(false);
     expect(bad([part('a', ['a'])])).toBe(false);
-    expect(bad(Array.from({ length: 9 }, (_, i) => part(`p${i}`)))).toBe(false);
+    expect(bad(Array.from({ length: 61 }, (_, i) => part(`p${i}`)))).toBe(false);
+    expect(bad(Array.from({ length: 39 }, (_, i) => part(`p${i}`)))).toBe(true); // a routine performed on many items
     expect(bad([part('Bad Id')])).toBe(false);
     expect(bad([])).toBe(false);
   });

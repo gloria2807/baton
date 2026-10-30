@@ -14,6 +14,7 @@ const api = {
   answerCard: (id: number, answer: unknown) => ipcRenderer.invoke('card:answer', id, answer),
   stopAll: () => ipcRenderer.invoke('lanes:stopAll'),
   saveProfile: (p: unknown) => ipcRenderer.invoke('profile:save', p),
+  getBudget: () => ipcRenderer.invoke('budget:get'),
   onAnchors: on('anchors'),
   onSpeak: on('speak'),
   listScores: () => ipcRenderer.invoke('score:list'),

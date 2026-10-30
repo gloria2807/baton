@@ -27,8 +27,21 @@ interface CueUpdate {
 
 type PttEvent = { type: 'start' } | { type: 'commit'; heldMs: number } | { type: 'cancel'; reason: string };
 
-const LANE_COLORS = ['#3b82f6', '#22c55e', '#f97316', '#a855f7'];
 const BARS = 28;
+
+// Today's model spending against the daily cap, so the cost is never a surprise.
+function Budget() {
+  const [b, setB] = useState<{ spent: number; budget: number } | null>(null);
+  useEffect(() => {
+    void window.baton.getBudget().then((x) => setB(x as { spent: number; budget: number } | null));
+  }, []);
+  if (!b) return null;
+  return (
+    <div className="budget">
+      Model spend today: ${b.spent.toFixed(2)} of ${b.budget.toFixed(2)}. Set BATON_DAILY_BUDGET_USD in .env to change the cap.
+    </div>
+  );
+}
 
 export function Podium() {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
@@ -162,9 +175,11 @@ export function Podium() {
     <div className="shell" ref={shell}>
       <div className={`bar phase-${phase.kind}`}>
         <div className="mark" aria-hidden>
-          {LANE_COLORS.map((c) => (
-            <span key={c} style={{ background: c }} />
-          ))}
+          {/* The baton: a tapered brass stroke with a small grip. */}
+          <svg width="26" height="26" viewBox="0 0 26 26">
+            <path d="M5 21 L21 5" stroke="#c99a3b" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M4.2 21.8 L7.6 18.4" stroke="#efe9dd" strokeWidth="3.4" strokeLinecap="round" />
+          </svg>
         </div>
         <div className="center">
           {phase.kind === 'idle' && (
@@ -243,6 +258,7 @@ export function Podium() {
             </select>
           </div>
           {profile && <ProfileForm initial={profile} />}
+          <Budget />
           <ol>
             <li>In Chrome, open the Baton extension’s options.</li>
             <li>Paste this token and press Save.</li>

@@ -223,6 +223,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('podium:init', () => ({ extension: extensionState(), token, hasModel: !!model, talkKey: settings.talkKey, talkKeys: talkKeyOptions(), profile }));
   ipcMain.handle('profile:save', (_e, p: unknown) => (profile = saveProfile(p)));
+  ipcMain.handle('budget:get', () => (model?.governor ? { spent: model.governor.spentToday, budget: model.governor.budget } : null));
   ipcMain.handle('settings:talkKey', (_e, key: unknown) => {
     if (isTalkKeyId(key)) setTalkKey(key);
     return settings.talkKey;
@@ -333,6 +334,13 @@ function handleArgs(argv: string[]) {
       const steps = (raw.steps ?? raw.rehearsals?.[0]?.steps ?? []).map((x) => RecordedStep.parse(x));
       await conductor.learnFrom(steps);
     })().catch((e) => log(`REHEARSAL failed: ${(e as Error).message}`));
+
+  // Save a picture of the Podium, for checking the design without a person.
+  if (argv.includes('--podium-snapshot'))
+    void podium?.webContents.capturePage().then((img) => {
+      writeFileSync(join(outDir('selftest'), 'podium.png'), img.toPNG());
+      log('podium snapshot saved');
+    });
 
   // Pick up a rebuilt extension.
   if (argv.includes('--reload-extension')) void whenPaired(() => bridge.request({ op: 'reloadExtension' }), 'reload-extension');

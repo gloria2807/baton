@@ -25,17 +25,16 @@ const CURSOR_SVG = (color: string) => `
 
 const STYLE = `
 :host{all:initial}
-.layer{position:fixed;inset:0;pointer-events:none;z-index:2147483647;font:600 13px/1.2 "Inter","Segoe UI",system-ui,sans-serif}
-.frame{position:fixed;inset:0;border:4px solid var(--c);border-radius:2px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
-.title{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;max-width:72vw;
-  padding:8px 16px 8px 12px;border-radius:999px;background:rgba(15,18,28,.86);color:#fff;backdrop-filter:blur(12px);
-  box-shadow:0 6px 24px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12)}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 30%,transparent);flex:none}
+.layer{position:fixed;inset:0;pointer-events:none;z-index:2147483647;font:600 13px/1.25 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.frame{position:fixed;inset:0;border:3px solid var(--c)}
+.title{position:fixed;top:0;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;max-width:72vw;
+  padding:7px 14px 8px 12px;border-radius:0 0 9px 9px;background:#17161a;color:#efe9dd;border:1px solid #34313a;border-top:0}
+.dot{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}
 .name{flex:none}
-.thinking{color:rgba(255,255,255,.72);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thinking{color:#a7a19a;font-weight:450;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thinking:empty{display:none}
 .cursor{position:fixed;left:0;top:0;width:30px;height:34px;transform:translate(-40px,-40px);
-  filter:drop-shadow(0 0 10px var(--c)) drop-shadow(0 2px 3px rgba(0,0,0,.35));will-change:transform}
+  filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45));will-change:transform}
 .cursor.hidden{opacity:0}
 .pulse{position:fixed;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:3px solid var(--c);
   animation:pulse .5s ease-out forwards}

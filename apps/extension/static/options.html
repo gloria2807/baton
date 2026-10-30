@@ -4,23 +4,27 @@
 <meta charset="utf-8">
 <title>Baton · Pairing</title>
 <style>
-  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0d14;color:#e8eaf2;font:15px/1.5 "Inter","Segoe UI",system-ui,sans-serif}
-  .card{width:520px;padding:32px 36px;border-radius:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
-  h1{margin:0 0 6px;font-size:24px}
-  p{color:#9aa1b5;margin:0 0 20px}
-  label{display:block;font-size:13px;font-weight:600;margin:14px 0 6px;color:#c6cad8}
-  input{width:100%;box-sizing:border-box;font:14px ui-monospace,Consolas,monospace;padding:11px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#141826;color:#fff}
-  button{margin-top:20px;font:600 15px inherit;font-family:inherit;padding:10px 22px;border:0;border-radius:10px;background:#7c8cff;color:#0b0d14;cursor:pointer}
-  #status{margin-top:22px;padding:10px 14px;border-radius:10px;background:#141826}
-  #status[data-status=connected]{color:#5eead4}
-  #status[data-status=rejected]{color:#fda4af}
-  #detail{color:#9aa1b5;font-size:13px;margin-top:6px}
+  :root { --ink:#17161a; --ink-2:#211f24; --line:#34313a; --paper:#efe9dd; --paper-2:#a7a19a; --brass:#c99a3b; --brass-ink:#1d160a; --alert:#e0674f; --done:#7fae7a; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--ink); color:var(--paper); font:14px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  form { width: 460px; }
+  h1 { margin:0 0 6px; font-size:22px; font-weight:650; letter-spacing:-0.01em; }
+  p { color:var(--paper-2); margin:0 0 24px; }
+  label { display:block; font-size:12.5px; color:var(--paper-2); margin:16px 0 6px; }
+  input { width:100%; font:14px inherit; font-family:inherit; letter-spacing:0.02em; padding:9px 11px; border-radius:7px; border:1px solid var(--line); background:var(--ink-2); color:var(--paper); }
+  input:focus { outline:none; border-color:var(--brass); }
+  button { margin-top:20px; font:600 14px inherit; font-family:inherit; padding:8px 18px; border:0; border-radius:7px; background:var(--brass); color:var(--brass-ink); cursor:pointer; }
+  button:hover { background:#d6a847; }
+  #status { margin-top:24px; padding-top:16px; border-top:1px solid var(--line); }
+  #status[data-status=connected] { color:var(--done); }
+  #status[data-status=rejected] { color:var(--alert); }
+  #detail { color:var(--paper-2); font-size:12.5px; margin-top:4px; }
 </style>
 </head>
 <body>
-<form class="card" id="form">
-  <h1>Pair with Baton</h1>
-  <p>Open the Baton app, choose “Pairing token” from its tray menu, and paste the token here. You only do this once.</p>
+<form id="form">
+  <h1>Pair Chrome with Baton</h1>
+  <p>In the Baton app, click “Pair Chrome” on the Podium and copy the token. Paste it here once.</p>
   <label for="token">Pairing token</label>
   <input id="token" autocomplete="off" spellcheck="false" placeholder="43 characters">
   <label for="port">Port</label>

@@ -46,7 +46,8 @@ import { costUsd, cropElement, launchLane, toOpenAI } from './lanes';
 import { outDir } from './paths';
 import { log } from './log';
 
-export const LANE_COLORS = ['#3b82f6', '#22c55e', '#f97316', '#a855f7', '#ec4899', '#14b8a6', '#eab308', '#ef4444'];
+// Lane colours from docs/DESIGN.md: distinct on camera, never neon.
+export const LANE_COLORS = ['#4d7bd8', '#3f9a6b', '#d98a3a', '#c8577a', '#2f9c9c', '#9b7a3d', '#7c8a9e', '#b85c3c'];
 
 export interface LaneView {
   laneId: string;
@@ -416,7 +417,7 @@ export class Conductor {
     return {
       laneId: 'score',
       laneName: run.score.title,
-      color: '#8b9bff',
+      color: '#c99a3b',
       headline,
       parts: [...run.parts.values()].map((st) => ({
         name: st.part.name,
@@ -704,7 +705,7 @@ export class Conductor {
     if (move.kind === 'answer' || move.kind === 'clarify') {
       const speech = move.kind === 'answer' ? move.speech : move.question;
       this.send('speak', speech);
-      void this.show({ kind: 'result', laneId: 'answer', laneName: 'Baton', color: '#8b9bff', status: move.kind === 'answer' ? 'answer' : 'question', result: speech, detail: '' });
+      void this.show({ kind: 'result', laneId: 'answer', laneName: 'Baton', color: '#c99a3b', status: move.kind === 'answer' ? 'answer' : 'question', result: speech, detail: '' });
       return;
     }
     if (this.busy) {

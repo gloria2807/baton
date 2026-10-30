@@ -1,9 +1,11 @@
-// The Score view window: task graph, filmstrip receipts, time against an estimate by hand.
+// The Score view: a finished cue drawn as a score. One staff line per lane in real time, each step
+// a note; approvals in brass, failed checks in alert. Each lane's receipt as a filmstrip below.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface Frame {
   n: number;
+  atMs: number;
   thinking: string;
   action: string;
   reason: string;
@@ -27,9 +29,9 @@ interface ScoreRecord {
   runId: string;
   score: { title: string; parts: Array<{ id: string; name: string; dependsOn: string[]; manualMinutes: number }> };
   headline: string;
+  speech?: string;
   seconds: number;
   manualMinutes: number;
-  waves: string[][] | null;
   lanes: LaneRecord[];
 }
 
@@ -42,6 +44,51 @@ interface Listed {
 }
 
 const fmt = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+
+function Staff({ rec, onPick }: { rec: ScoreRecord; onPick: (f: Frame) => void }) {
+  const total = Math.max(1, rec.seconds * 1000);
+  const ticks = useMemo(() => {
+    const step = total > 120000 ? 30000 : total > 40000 ? 10000 : 5000;
+    // Leave room at the right edge so the last label never wraps.
+    return Array.from({ length: Math.floor(total / step) + 1 }, (_, i) => i * step).filter((t) => t / total < 0.94);
+  }, [total]);
+  return (
+    <div className="staff">
+      <div className="staff-axis">
+        {ticks.map((t) => (
+          <span key={t} style={{ left: `${(t / total) * 100}%` }}>
+            {t / 1000} s
+          </span>
+        ))}
+      </div>
+      {rec.lanes.map((l) => {
+        const frames = l.attempts.flat();
+        const last = frames[frames.length - 1];
+        return (
+          <div className="staff-row" key={l.id} style={{ ['--c' as string]: l.color }}>
+            <div className="staff-name">
+              <i />
+              {l.name}
+            </div>
+            <div className="staff-line">
+              {frames.map((f, i) => (
+                <button
+                  key={`${i}-${f.n}`}
+                  className={`note ${f.ok ? '' : 'miss'} ${f.gate === 'approved' || f.gate === 'pre-approved' ? 'yes' : ''} ${f.gate === 'blocked' || f.gate === 'declined' ? 'held' : ''}`}
+                  style={{ left: `${(f.atMs / total) * 100}%` }}
+                  title={`${f.n}. ${f.action}`}
+                  onClick={() => onPick(f)}
+                />
+              ))}
+              {last && <span className={`barline ${l.result?.status === 'done' ? '' : 'open'}`} style={{ left: `${(last.atMs / total) * 100}%` }} />}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ScoreView() {
   const [list, setList] = useState<Listed[]>([]);
@@ -60,63 +107,36 @@ export function ScoreView() {
     if (runId) void window.baton.getScore(runId).then((r) => setRec(r as ScoreRecord));
   }, [runId]);
 
-  const byId = (id: string) => rec?.lanes.find((l) => l.id === id);
-  const saved = rec ? rec.manualMinutes * 60 - rec.seconds : 0;
+  const steps = rec?.lanes.reduce((a, l) => a + l.attempts.flat().length, 0) ?? 0;
 
   return (
     <div className="scoreview">
       <aside>
-        <div className="sv-brand">Score</div>
+        <div className="sv-title">Scores</div>
         {list.map((s) => (
           <button key={s.runId} className={s.runId === runId ? 'on' : ''} onClick={() => setRunId(s.runId)}>
-            <b>{s.title}</b>
-            <span>
-              {new Date(s.startedAt).toLocaleString()} · {s.lanes} lanes · {fmt(s.seconds)}
+            <span className="t">{s.title}</span>
+            <span className="m">
+              {when(s.startedAt)} · {s.lanes} {s.lanes === 1 ? 'lane' : 'lanes'} · {fmt(s.seconds)}
             </span>
           </button>
         ))}
-        {!list.length && <p className="muted">No Scores yet. Give Baton a request with several parts.</p>}
+        {!list.length && <p className="m">No scores yet. Ask Baton for something with several parts.</p>}
       </aside>
       {rec && (
         <main>
           <header>
             <h1>{rec.score.title}</h1>
-            <p>{rec.headline}</p>
-            <div className="stats">
-              <div>
-                <b>{fmt(rec.seconds)}</b>
-                <span>with Baton</span>
-              </div>
-              <div>
-                <b>about {rec.manualMinutes} min</b>
-                <span>estimated by hand</span>
-              </div>
-              <div>
-                <b>{saved > 0 ? fmt(saved) : '—'}</b>
-                <span>saved</span>
-              </div>
-            </div>
+            <p className="lead">{rec.speech ?? rec.headline}</p>
+            <p className="totals">
+              {rec.lanes.length} lanes, {steps} steps, {fmt(rec.seconds)} with Baton. By hand this is about {rec.manualMinutes} minutes.
+            </p>
           </header>
 
-          <section className="graph">
-            {(rec.waves ?? [rec.score.parts.map((p) => p.id)]).map((wave, i) => (
-              <div className="sv-wave" key={i}>
-                <div className="sv-wave-label">{i === 0 ? 'together' : `then (wave ${i + 1})`}</div>
-                {wave.map((id) => {
-                  const l = byId(id);
-                  const part = rec.score.parts.find((p) => p.id === id);
-                  return (
-                    <div className="node" key={id} style={{ ['--c' as string]: l?.color ?? '#8b9bff' }}>
-                      <i />
-                      <b>{part?.name ?? id}</b>
-                      <span className={`st s-${l?.result?.status}`}>{l?.result?.status ?? '—'}</span>
-                      {part?.dependsOn.length ? <em>needs {part.dependsOn.map((d) => byId(d)?.name ?? d).join(', ')}</em> : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </section>
+          <Staff rec={rec} onPick={setZoom} />
+          <p className="legend">
+            <span className="note-key" /> step <span className="note-key yes" /> approved by you <span className="note-key miss" /> check failed, tried again <span className="bar-key" /> finished
+          </p>
 
           {rec.lanes.map((l) => (
             <section className="lane-strip" key={l.id} style={{ ['--c' as string]: l.color }}>
@@ -127,16 +147,15 @@ export function ScoreView() {
               </div>
               {l.attempts.map((frames, a) => (
                 <div className="film" key={a}>
-                  {a > 0 && <div className="redirected">redirected</div>}
+                  {a > 0 && <div className="redirected">After your redirect</div>}
                   {frames.map((f) => (
-                    <figure key={f.n} className={`${f.ok ? '' : 'bad'} gate-${f.gate}`} onClick={() => setZoom(f)}>
+                    <figure key={f.n} className={f.ok ? '' : 'miss'} onClick={() => setZoom(f)}>
                       {f.image ? <img src={f.image} alt="" /> : <div className="noimg" />}
                       <figcaption>
                         <b>
-                          {f.n}. {f.action}
+                          {f.n}. {f.thinking || f.action}
                         </b>
-                        <span>{f.thinking}</span>
-                        {f.gate !== 'allowed' && <em>{f.gate}</em>}
+                        <span>{f.action}</span>
                       </figcaption>
                     </figure>
                   ))}
@@ -154,7 +173,7 @@ export function ScoreView() {
               Step {zoom.n}: {zoom.action}
             </b>
             <p>{zoom.reason}</p>
-            <p className={zoom.ok ? 'ok' : 'bad'}>
+            <p className={zoom.ok ? 'ok' : 'miss'}>
               {zoom.ok ? 'Checked' : 'Check failed'}: {zoom.note} · {zoom.seconds} s{zoom.gate !== 'allowed' ? ` · ${zoom.gate}` : ''}
             </p>
           </div>

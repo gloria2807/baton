@@ -119,7 +119,7 @@ export function CardView({ card }: { card: Card }) {
     case 'result':
       return (
         <div className={`card result status-${card.status}`}>
-          <Head card={card} label={card.status === 'done' ? 'finished' : card.status} />
+          <Head card={card} label={card.status === 'done' ? 'finished' : card.status === 'answer' ? 'answered' : card.status} />
           <div className="card-title">{card.result}</div>
           <div className="card-actions">
             <span className="hint">{card.detail}</span>

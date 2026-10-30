@@ -4,6 +4,7 @@
 import { BRIDGE_PORT, PROTOCOL_VERSION, ToExtension, parseFrame, type Command, type FromExtension, type LookResult } from '@baton/core/bridge';
 import { toIsoDate } from '@baton/core/lane/dates';
 import type { CollectResult, LaneInfo, TargetResult, ToContent, ToWorker } from './messages';
+import type { RestReport } from './pointer';
 
 interface Lane extends LaneInfo {
   windowId: number;
@@ -203,6 +204,27 @@ async function execute(c: Command): Promise<unknown> {
     case 'ping':
       return 'pong';
 
+    case 'cueStart':
+      cue = { id: c.cueId, startedAt: Date.now(), n: 0, keys: new Map() };
+      await broadcast({ kind: 'cue', active: true, cueId: c.cueId });
+      return true;
+
+    case 'cueEnd':
+      if (cue?.id === c.cueId) cue = null;
+      await broadcast({ kind: 'cue', active: false, keep: c.keep });
+      return true;
+
+    case 'reloadTab':
+      await chrome.tabs.reload(c.tabId);
+      return true;
+
+    case 'fillCells': {
+      const l = lane(c.laneId);
+      await aim(l, { mark: c.mark }, true);
+      await toTab(l.tabId, { kind: 'clickPulse' });
+      return { filled: await toTab<number>(l.tabId, { kind: 'fillCells', mark: c.mark, rows: c.rows }, 20000) };
+    }
+
     case 'reloadExtension':
       setTimeout(() => chrome.runtime.reload(), 200);
       return true;
@@ -364,7 +386,77 @@ async function closeLane(l: Lane) {
 
 // ── Chrome events ────────────────────────────────────────────────────────
 
+// ── Cues: anchors from wherever the person points ─────────────────────────
+
+let cue: { id: string; startedAt: number; n: number; keys: Map<string, number> } | null = null;
+
+async function broadcast(msg: ToContent) {
+  for (const tab of await chrome.tabs.query({})) {
+    if (tab.id !== undefined && /^https?:|^file:/.test(tab.url ?? '')) chrome.tabs.sendMessage(tab.id, msg).catch(() => undefined);
+  }
+}
+
+// A crop around what was pointed at, for the model and the Podium. Best effort: Chrome limits
+// how often a visible tab can be captured.
+async function cropAround(windowId: number, r: RestReport): Promise<string | undefined> {
+  try {
+    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 80 });
+    const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    const s = bitmap.width / r.viewport.width;
+    const pad = 24;
+    let x = Math.max(0, r.rect.x - pad);
+    let y = Math.max(0, r.rect.y - pad);
+    let w = Math.min(r.viewport.width, r.rect.x + r.rect.w + pad) - x;
+    let h = Math.min(r.viewport.height, r.rect.y + r.rect.h + pad) - y;
+    // Very large targets: a window centred on the pointer instead.
+    if (w > 1100 || h > 750) {
+      w = Math.min(1100, r.viewport.width);
+      h = Math.min(750, r.viewport.height);
+      x = Math.min(Math.max(0, r.point.x - w / 2), r.viewport.width - w);
+      y = Math.min(Math.max(0, r.point.y - h / 2), r.viewport.height - h);
+    }
+    if (w < 8 || h < 8) return undefined;
+    const canvas = new OffscreenCanvas(Math.round(w * s), Math.round(h * s));
+    canvas.getContext('2d')!.drawImage(bitmap, x * s, y * s, w * s, h * s, 0, 0, canvas.width, canvas.height);
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  } catch {
+    return undefined;
+  }
+}
+
+async function onRest(r: RestReport, tab: chrome.tabs.Tab | undefined): Promise<{ n?: number; isNew?: boolean }> {
+  if (!cue || r.cueId !== cue.id || tab?.id === undefined) return {};
+  const key = `${tab.id}|${r.key}`;
+  const seen = cue.keys.get(key);
+  if (seen) return { n: seen, isNew: false };
+  const c = cue;
+  const n = ++c.n;
+  c.keys.set(key, n);
+  const at = Date.now() - c.startedAt;
+  // Answer the page first so the pin appears at once; the screenshot follows.
+  void (async () => {
+    const screenshot = await cropAround(tab.windowId, r);
+    send({
+      type: 'event',
+      event: {
+        kind: 'anchor',
+        cueId: c.id,
+        anchor: { n, at, source: 'chrome', url: r.url, title: r.title, tabId: tab.id, laneId: laneByTab(tab.id)?.laneId, point: r.point, rect: r.rect, target: r.target, screenshot },
+      },
+    });
+  })();
+  return { n, isNew: true };
+}
+
 chrome.runtime.onMessage.addListener((msg: ToWorker, sender, reply) => {
+  if (msg.kind === 'rest') {
+    onRest(msg, sender.tab).then(reply, () => reply({}));
+    return true;
+  }
   if (msg.kind === 'whoami') {
     ready.then(() => {
       const l = laneByTab(sender.tab?.id);
@@ -400,5 +492,12 @@ chrome.alarms.onAlarm.addListener((a) => {
 });
 
 chrome.runtime.onStartup.addListener(() => void connect());
-chrome.runtime.onInstalled.addListener(() => void connect());
+// Tabs that were open before an install or reload still run the old page script, which can no
+// longer reach this worker. Give every open page the new one so pointing works without a refresh.
+chrome.runtime.onInstalled.addListener(async () => {
+  void connect();
+  for (const tab of await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })) {
+    if (tab.id !== undefined) chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => undefined);
+  }
+});
 void connect();

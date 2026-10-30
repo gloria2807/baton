@@ -3,11 +3,13 @@
 // injection warnings, answerable by click or by voice.
 
 import { screen } from 'electron';
-import { z } from 'zod';
-import { voiceAnswer, type InjectionFinding, type LaneStatus, type Supervisor } from '@baton/core';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { CueMove, cueMessages, mapDeixis, transferGoal, voiceAnswer, type Anchor, type InjectionFinding, type LaneStatus, type Profile, type Supervisor } from '@baton/core';
 import type { Model } from '@baton/model';
 import type { BridgeServer } from './bridge-server';
-import { costUsd, cropElement, launchLane } from './lanes';
+import { costUsd, cropElement, launchLane, toOpenAI } from './lanes';
+import { outDir } from './paths';
 import { log } from './log';
 
 export const LANE_COLORS = ['#3b82f6', '#22c55e', '#f97316', '#a855f7', '#ec4899', '#14b8a6', '#eab308', '#ef4444'];
@@ -40,12 +42,6 @@ const SITES = `Known sites (fictional demo sites, prefer them when the request m
 - Roam, travel search (flights from/to airport codes LOS LIS ACC LHR NBO MAD, hotels near Doca Hall Lisbon, Atlas Summit event guide): http://localhost:4402/ (hotels: http://localhost:4402/hotels, event: http://localhost:4402/events/atlas-summit)
 For anything else use the real public website that best fits (e.g. https://www.google.com/maps, https://www.openstreetmap.org, https://www.wikipedia.org).`;
 
-const SingleLanePlan = z.object({
-  name: z.string().transform((s) => s.slice(0, 24)),
-  goal: z.string().min(3).max(400),
-  startUrl: z.string().url(),
-});
-
 export class Conductor {
   private cards = new Map<number, Pending>();
   private nextCard = 1;
@@ -58,6 +54,7 @@ export class Conductor {
     private bridge: BridgeServer,
     private getModel: () => Model | null,
     private send: (channel: string, payload: unknown) => void,
+    private getProfile: () => Profile,
   ) {}
 
   // ── Cards ──────────────────────────────────────────────────────────────
@@ -85,8 +82,9 @@ export class Conductor {
     p.resolve(a);
   }
 
-  // A spoken cue first answers whatever card is waiting; returns true if it did.
-  answerByVoice(transcript: string): boolean {
+  // A spoken cue first answers whatever card is waiting; returns true if it did. A cue that points
+  // at things is a new request, not an answer to a lane's question.
+  answerByVoice(transcript: string, pointed = false): boolean {
     const waiting = [...this.cards.values()].find((p) => p.card.kind !== 'result');
     if (!waiting) return false;
     const yesNo = voiceAnswer(transcript);
@@ -98,6 +96,7 @@ export class Conductor {
       if (!yesNo) return false;
       this.answer(card.id, { choice: yesNo === 'approved' ? 'continue' : 'stop' });
     } else if (card.kind === 'question') {
+      if (pointed) return false;
       if (/^\s*(stop|cancel|never mind)\b/i.test(transcript)) this.answer(card.id, { choice: 'stop' });
       else this.answer(card.id, { text: transcript });
     }
@@ -187,31 +186,71 @@ export class Conductor {
     }
   }
 
-  // A cue that is not an answer becomes one lane (Stage 4 replaces this with a Score).
-  async fromCue(transcript: string) {
+  // A cue that is not an answer to a card: interpret what was said and pointed at, then answer
+  // aloud, run one lane, or move data from "this" to "there". (Stage 4 adds multi-lane Scores.)
+  async fromCue(cue: { id: string; transcript: string; intent: string; anchors: Anchor[]; heldMs: number }) {
     const model = this.getModel();
     if (!model) return;
-    if (/\b(everyone|everybody|all lanes)\b.*\bstop\b|^\s*stop everything\b/i.test(transcript)) {
+    if (/\b(everyone|everybody|all lanes)\b.*\bstop\b|^\s*stop everything\b/i.test(cue.transcript)) {
       this.stopAll();
+      return;
+    }
+    const references = mapDeixis(cue.transcript, cue.heldMs, cue.anchors);
+    this.send('podium:notice', 'Thinking…');
+    const record: Record<string, unknown> = {
+      id: cue.id,
+      transcript: cue.transcript,
+      intent: cue.intent,
+      durationMs: cue.heldMs,
+      anchors: cue.anchors.map(({ screenshot: _s, ...a }) => a),
+      references,
+    };
+    try {
+      const r = await model.json(CueMove, toOpenAI(cueMessages({ transcript: cue.transcript, intent: cue.intent, anchors: cue.anchors, references, profile: this.getProfile(), sites: SITES })), 'low');
+      const move = r.value;
+      record.move = move;
+      record.ms = Math.round(r.ms);
+      log(`cue ${cue.id} → ${move.kind} (${Math.round(r.ms)} ms, ${cue.anchors.length} anchors)`);
+      await this.perform(move, cue.anchors);
+    } catch (e) {
+      record.error = (e as Error).message;
+      this.send('podium:notice', `Could not understand that: ${(e as Error).message}`);
+    } finally {
+      writeFileSync(join(outDir('cues'), `${cue.id}.json`), JSON.stringify(record, null, 2));
+    }
+  }
+
+  private async perform(move: CueMove, anchors: Anchor[]) {
+    const byN = (n: number) => anchors.find((a) => a.n === n);
+    if (move.kind === 'answer' || move.kind === 'clarify') {
+      const speech = move.kind === 'answer' ? move.speech : move.question;
+      this.send('speak', speech);
+      void this.show({ kind: 'result', laneId: 'answer', laneName: 'Baton', color: '#8b9bff', status: move.kind === 'answer' ? 'answer' : 'question', result: speech, detail: '' });
       return;
     }
     if (this.busy) {
       this.send('podium:notice', 'A lane is already running. Say “everyone stop” to stop it.');
       return;
     }
-    this.send('podium:notice', 'Planning…');
-    try {
-      const plan = await model.json(SingleLanePlan, [
-        {
-          role: 'system',
-          content: `You turn a spoken request into one browser task for Baton. Reply with JSON only: {"name": short lane name (2-3 words), "goal": the full task in one or two sentences with every detail from the request, "startUrl": where to begin}.\n${SITES}`,
-        },
-        { role: 'user', content: `Request: "${transcript}"` },
-      ]);
-      log(`cue planned as one lane (${Math.round(plan.ms)} ms)`);
-      await this.runOne({ name: plan.value.name, goal: plan.value.goal, startUrl: plan.value.startUrl });
-    } catch (e) {
-      this.send('podium:notice', `Could not start: ${(e as Error).message}`);
+    if (move.kind === 'task') {
+      await this.runOne({ name: move.name, goal: move.goal, startUrl: move.startUrl });
+      return;
     }
+    // Transfer: the data comes straight from the anchor, so nothing is retyped by a model.
+    const from = byN(move.from);
+    const to = byN(move.to);
+    if (!from || from.source !== 'chrome' || !from.target) {
+      this.send('speak', 'I could not read what you pointed at first. Point at it inside a Chrome page and try again.');
+      this.send('podium:notice', '“This” was not on a web page Baton can read.');
+      return;
+    }
+    if (!to || to.source !== 'chrome' || !to.url) {
+      this.send('speak', 'I can only put things into a web page you pointed at in Chrome.');
+      this.send('podium:notice', 'Point at a place in a Chrome tab for “there”.');
+      return;
+    }
+    const out = await this.runOne({ name: move.name, goal: transferGoal(from, to, move.instruction), startUrl: to.url });
+    // The person is looking at the destination in their own tab: show them the result there.
+    if (out.status === 'done' && to.tabId !== undefined && !to.laneId) await this.bridge.request({ op: 'reloadTab', tabId: to.tabId }).catch(() => undefined);
   }
 }

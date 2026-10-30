@@ -12,3 +12,7 @@ export * from './lane/prompt.js';
 export * from './lane/loop.js';
 export * from './lane/dates.js';
 export * from './safety/secrets.js';
+export * from './cue/anchor.js';
+export * from './cue/deixis.js';
+export * from './cue/interpret.js';
+export * from './cue/profile.js';

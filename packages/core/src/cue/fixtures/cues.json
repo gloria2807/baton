@@ -1,0 +1,311 @@
+{
+  "_about": "Cues as Baton records them (transcript, how long the key was held, when each anchor appeared) with the anchor each pointing word should map to. Entries with \"source\": \"recorded\" were captured from real use; the others are written by hand to cover cases.",
+  "cues": [
+    {
+      "name": "what is this",
+      "transcript": "What is this?",
+      "durationMs": 1800,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 150
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ]
+      ]
+    },
+    {
+      "name": "put this there",
+      "transcript": "Put this there.",
+      "durationMs": 2600,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 400
+        },
+        {
+          "n": 2,
+          "at": 1700
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ],
+        [
+          "there",
+          2
+        ]
+      ]
+    },
+    {
+      "name": "this, there with a pause",
+      "transcript": "Put this… there.",
+      "durationMs": 4200,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 300
+        },
+        {
+          "n": 2,
+          "at": 3100
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ],
+        [
+          "there",
+          2
+        ]
+      ]
+    },
+    {
+      "name": "send this to her",
+      "transcript": "Send this to her.",
+      "durationMs": 2400,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 350
+        },
+        {
+          "n": 2,
+          "at": 1500
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ],
+        [
+          "her",
+          2
+        ]
+      ]
+    },
+    {
+      "name": "it refers back",
+      "transcript": "Take this table and put it in that sheet.",
+      "durationMs": 3800,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 500
+        },
+        {
+          "n": 2,
+          "at": 2600
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ],
+        [
+          "it",
+          1
+        ],
+        [
+          "that",
+          2
+        ]
+      ]
+    },
+    {
+      "name": "three things in order",
+      "transcript": "Compare this, this and this.",
+      "durationMs": 3600,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 600
+        },
+        {
+          "n": 2,
+          "at": 1600
+        },
+        {
+          "n": 3,
+          "at": 2700
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ],
+        [
+          "this",
+          2
+        ],
+        [
+          "this",
+          3
+        ]
+      ]
+    },
+    {
+      "name": "pointed at more than named",
+      "transcript": "Add this to my calendar.",
+      "durationMs": 2500,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 200
+        },
+        {
+          "n": 2,
+          "at": 2200
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ]
+      ]
+    },
+    {
+      "name": "late pointing wins on timing",
+      "transcript": "Find this cheaper.",
+      "durationMs": 2400,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 100
+        },
+        {
+          "n": 2,
+          "at": 900
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          2
+        ]
+      ]
+    },
+    {
+      "name": "no anchors",
+      "transcript": "What is this?",
+      "durationMs": 1500,
+      "anchors": [],
+      "expect": [
+        [
+          "this",
+          null
+        ]
+      ]
+    },
+    {
+      "name": "existential there is not pointing",
+      "transcript": "Is there a cheaper flight than this one?",
+      "durationMs": 3000,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 1800
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ]
+      ]
+    },
+    {
+      "name": "time words are not pointing",
+      "transcript": "Book this for this weekend.",
+      "durationMs": 2600,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 300
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ]
+      ]
+    },
+    {
+      "name": "here and there",
+      "transcript": "Move the rows from here to there.",
+      "durationMs": 3200,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 900
+        },
+        {
+          "n": 2,
+          "at": 2300
+        }
+      ],
+      "expect": [
+        [
+          "here",
+          1
+        ],
+        [
+          "there",
+          2
+        ]
+      ]
+    },
+    {
+      "name": "recorded: what is this on the invitation",
+      "source": "recorded",
+      "transcript": "What is this?",
+      "durationMs": 2391,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 319
+        }
+      ],
+      "expect": [
+        [
+          "this",
+          1
+        ]
+      ]
+    },
+    {
+      "name": "recorded: pointing words lost in transcription",
+      "source": "recorded",
+      "transcript": "Yeah",
+      "durationMs": 5738,
+      "anchors": [
+        {
+          "n": 1,
+          "at": 323
+        },
+        {
+          "n": 2,
+          "at": 2776
+        },
+        {
+          "n": 3,
+          "at": 4578
+        }
+      ],
+      "expect": []
+    }
+  ]
+}

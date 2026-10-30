@@ -58,6 +58,9 @@ export class BridgeHands implements Hands {
   async scroll(by: { dy: number } | { mark: number }) {
     await this.bridge.request({ op: 'scroll', laneId: this.laneId, ...by });
   }
+  async fillCells(mark: number, rows: string[][]) {
+    await this.bridge.request({ op: 'fillCells', laneId: this.laneId, mark, rows }, 30000);
+  }
   async back() {
     await this.bridge.request({ op: 'back', laneId: this.laneId }, 20000);
   }
@@ -66,7 +69,7 @@ export class BridgeHands implements Hands {
   }
 }
 
-function toOpenAI(messages: LaneMessage[]): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+export function toOpenAI(messages: LaneMessage[]): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
   return messages.map((m) =>
     m.role === 'system'
       ? { role: 'system', content: typeof m.content === 'string' ? m.content : m.content.map((p) => (p.type === 'text' ? p.text : '')).join('\n') }

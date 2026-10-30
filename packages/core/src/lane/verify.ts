@@ -63,6 +63,20 @@ export function verify(action: Action, before: LookResult, after: LookResult, ta
       const ok = iso ? field.value === iso : norm(field.value ?? '') === norm(action.text) || (!!field.value && norm(action.text).includes(norm(field.value)));
       return ok ? { ok: true, note: `field now holds “${field.value}”` } : { ok: false, note: `field holds “${field.value ?? ''}”, not “${action.text}”` };
     }
+    case 'fill_cells': {
+      // Every value written must now be in some field on the page.
+      const values = after.elements.map((e) => norm(e.value ?? ''));
+      const wanted = action.rows.flat().map(norm).filter(Boolean);
+      const missing = wanted.filter((w) => {
+        const i = values.indexOf(w);
+        if (i < 0) return true;
+        values.splice(i, 1);
+        return false;
+      });
+      return missing.length === 0
+        ? { ok: true, note: `${wanted.length} cells filled` }
+        : { ok: false, note: `${missing.length} of ${wanted.length} values are not in the sheet (e.g. “${missing[0]}”)` };
+    }
     case 'select': {
       const field = target && findSame(target, after);
       const ok = !!field && (norm(field.value ?? '') === norm(action.option) || norm(field.value ?? '').includes(norm(action.option)));

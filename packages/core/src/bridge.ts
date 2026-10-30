@@ -2,6 +2,10 @@
 // Every frame on the local WebSocket is validated against these schemas on both ends.
 
 import { z } from 'zod';
+import { Anchor } from './cue/anchor.js';
+import { Rect } from './geometry.js';
+
+export { Rect } from './geometry.js';
 
 export const BRIDGE_PORT = 4317;
 export const PROTOCOL_VERSION = 1;
@@ -17,8 +21,6 @@ export const Bounds = z.object({
 });
 export type Bounds = z.infer<typeof Bounds>;
 
-export const Rect = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() });
-export type Rect = z.infer<typeof Rect>;
 
 // One numbered interactive element as the lane sees it.
 export const Element = z.object({
@@ -58,6 +60,12 @@ export const Command = z.discriminatedUnion('op', [
   z.object({ op: z.literal('scroll'), laneId: LaneId, dy: z.number().int().default(0), mark: z.number().int().positive().optional() }),
   z.object({ op: z.literal('select'), laneId: LaneId, mark: z.number().int().positive(), option: z.string().max(200) }),
   z.object({ op: z.literal('back'), laneId: LaneId }),
+  z.object({ op: z.literal('fillCells'), laneId: LaneId, mark: z.number().int().positive(), rows: z.array(z.array(z.string().max(500)).max(20)).max(60) }),
+  // A cue starts or ends: content scripts in every tab watch where the pointer rests.
+  z.object({ op: z.literal('cueStart'), cueId: z.string().max(64) }),
+  z.object({ op: z.literal('cueEnd'), cueId: z.string().max(64), keep: z.boolean() }),
+  // Reload one of the person's tabs (after a lane changed what it shows).
+  z.object({ op: z.literal('reloadTab'), tabId: z.number().int() }),
   // Development: pick up a rebuilt extension without a trip to chrome://extensions.
   z.object({ op: z.literal('reloadExtension') }),
   z.object({ op: z.literal('setThinking'), laneId: LaneId, text: z.string().max(140) }),
@@ -89,6 +97,8 @@ export type ToExtension = z.infer<typeof ToExtension>;
 export const LaneEvent = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('laneClosed'), laneId: LaneId }),
   z.object({ kind: z.literal('log'), message: z.string().max(500) }),
+  // The person's pointer rested on something during a cue.
+  z.object({ kind: z.literal('anchor'), cueId: z.string().max(64), anchor: Anchor }),
 ]);
 export type LaneEvent = z.infer<typeof LaneEvent>;
 

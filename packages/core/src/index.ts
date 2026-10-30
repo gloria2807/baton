@@ -16,3 +16,7 @@ export * from './cue/anchor.js';
 export * from './cue/deixis.js';
 export * from './cue/interpret.js';
 export * from './cue/profile.js';
+export * from './score/score.js';
+export * from './score/scheduler.js';
+export * from './score/tiling.js';
+export * from './score/merge.js';

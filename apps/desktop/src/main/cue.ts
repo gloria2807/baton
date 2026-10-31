@@ -26,7 +26,8 @@ export class CueSession {
     private podium: () => BrowserWindow | null,
     private onAnchors: (list: Array<{ n: number; label: string; source: string }>) => void,
   ) {
-    if (bridge.connected) bridge.request({ op: 'cueStart', cueId: this.id }, 3000).catch((e) => log(`cueStart: ${(e as Error).message}`));
+    if (bridge.connected)
+      bridge.request({ op: 'cueStart', cueId: this.id }, 3000).catch((e) => log(`cueStart: ${(e as Error).message}`));
     uIOhook.on('mousemove', this.onMove);
     this.moved(); // the person may already be pointing
   }
@@ -83,15 +84,26 @@ export class CueSession {
       const display = screen.getDisplayNearestPoint(p);
       const { width, height } = display.size;
       const scale = display.scaleFactor;
-      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(width * scale), height: Math.round(height * scale) } });
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: Math.round(width * scale), height: Math.round(height * scale) },
+      });
       const source = sources.find((s) => s.display_id === String(display.id)) ?? sources[0];
       if (!source) return undefined;
       const w = Math.min(1100, width);
       const h = Math.min(700, height);
       const x = Math.min(Math.max(0, p.x - display.bounds.x - w / 2), width - w);
       const y = Math.min(Math.max(0, p.y - display.bounds.y - h / 2), height - h);
-      const crop = source.thumbnail.crop({ x: Math.round(x * scale), y: Math.round(y * scale), width: Math.round(w * scale), height: Math.round(h * scale) });
-      return crop.resize({ width: Math.min(1100, crop.getSize().width) }).toJPEG(80).toString('base64');
+      const crop = source.thumbnail.crop({
+        x: Math.round(x * scale),
+        y: Math.round(y * scale),
+        width: Math.round(w * scale),
+        height: Math.round(h * scale),
+      });
+      return crop
+        .resize({ width: Math.min(1100, crop.getSize().width) })
+        .toJPEG(80)
+        .toString('base64');
     } catch (e) {
       log(`desktop screenshot failed: ${(e as Error).message}`);
       return undefined;
@@ -103,7 +115,8 @@ export class CueSession {
     this.ended = true;
     if (this.restTimer) clearTimeout(this.restTimer);
     uIOhook.off('mousemove', this.onMove);
-    if (this.bridge.connected) await this.bridge.request({ op: 'cueEnd', cueId: this.id, keep }, 3000).catch(() => undefined);
+    if (this.bridge.connected)
+      await this.bridge.request({ op: 'cueEnd', cueId: this.id, keep }, 3000).catch(() => undefined);
     const until = Date.now() + 1500;
     while (this.pending > 0 && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
     await new Promise((r) => setTimeout(r, 250)); // last Chrome screenshots

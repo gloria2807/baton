@@ -6,10 +6,31 @@ import { z } from 'zod';
 const at = z.number().int().nonnegative(); // ms since "watch me"
 
 export const RecordedStep = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('navigate'), at, url: z.string(), title: z.string().max(300), text: z.string().max(6000).default('') }),
-  z.object({ type: z.literal('click'), at, url: z.string(), role: z.string().max(40), name: z.string().max(200), href: z.string().max(500).optional() }),
+  z.object({
+    type: z.literal('navigate'),
+    at,
+    url: z.string(),
+    title: z.string().max(300),
+    text: z.string().max(6000).default(''),
+  }),
+  z.object({
+    type: z.literal('click'),
+    at,
+    url: z.string(),
+    role: z.string().max(40),
+    name: z.string().max(200),
+    href: z.string().max(500).optional(),
+  }),
   // A field's final value; blocked fields (passwords, card numbers) arrive with no value.
-  z.object({ type: z.literal('input'), at, url: z.string(), field: z.string().max(200), kind: z.string().max(40), value: z.string().max(2000).optional(), blocked: z.boolean().optional() }),
+  z.object({
+    type: z.literal('input'),
+    at,
+    url: z.string(),
+    field: z.string().max(200),
+    kind: z.string().max(40),
+    value: z.string().max(2000).optional(),
+    blocked: z.boolean().optional(),
+  }),
   z.object({ type: z.literal('copy'), at, url: z.string(), text: z.string().max(2000) }),
   z.object({ type: z.literal('paste'), at, url: z.string(), field: z.string().max(200), text: z.string().max(2000) }),
   // What the person said while working ("the vendor goes here").
@@ -17,7 +38,8 @@ export const RecordedStep = z.discriminatedUnion('type', [
 ]);
 export type RecordedStep = z.infer<typeof RecordedStep>;
 
-const sameField = (a: RecordedStep, b: RecordedStep) => a.type === 'input' && b.type === 'input' && a.url === b.url && a.field === b.field;
+const sameField = (a: RecordedStep, b: RecordedStep) =>
+  a.type === 'input' && b.type === 'input' && a.url === b.url && a.field === b.field;
 
 // Remove noise: repeated edits of the same field keep the last value, a click that only focused a
 // field before typing in it goes, duplicate page loads collapse.
@@ -36,7 +58,12 @@ export function cleanRehearsal(steps: RecordedStep[]): RecordedStep[] {
     }
     if (s.type === 'navigate' && prev?.type === 'navigate' && prev.url === s.url) continue;
     // A click on a field that is then typed into is just focusing it.
-    if (prev?.type === 'click' && (s.type === 'input' || s.type === 'paste') && /textbox|searchbox|combobox|input|textarea/.test(prev.role) && prev.name === s.field) {
+    if (
+      prev?.type === 'click' &&
+      (s.type === 'input' || s.type === 'paste') &&
+      /textbox|searchbox|combobox|input|textarea/.test(prev.role) &&
+      prev.name === s.field
+    ) {
       out[out.length - 1] = s;
       continue;
     }
@@ -52,7 +79,11 @@ export interface VariableHint {
   from: string; // the url the value was seen on
 }
 
-const norm = (s: string) => s.replace(/[\s,]+/g, ' ').trim().toLowerCase();
+const norm = (s: string) =>
+  s
+    .replace(/[\s,]+/g, ' ')
+    .trim()
+    .toLowerCase();
 
 // A value typed into a field that the person had copied, or that appeared on a page they visited
 // earlier, came from the item being processed: it is a variable.

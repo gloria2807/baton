@@ -1,10 +1,19 @@
 // Baton's hands: connects to the desktop app over the paired local WebSocket and drives lane
 // windows with chrome.debugger (DevTools Protocol) for screenshots, mouse and keyboard.
 
-import { BRIDGE_PORT, PROTOCOL_VERSION, ToExtension, parseFrame, type Command, type FromExtension, type LookResult } from '@baton/core/bridge';
+import {
+  BRIDGE_PORT,
+  PROTOCOL_VERSION,
+  ToExtension,
+  parseFrame,
+  type Command,
+  type FromExtension,
+  type LookResult,
+} from '@baton/core/bridge';
 import { toIsoDate } from '@baton/core/lane/dates';
 import type { CollectResult, LaneInfo, TargetResult, ToContent, ToWorker } from './messages';
 import type { RestReport } from './pointer';
+import { exportText, settleFrame, tidyFrame, type TidyReport } from './tidy';
 
 interface Lane extends LaneInfo {
   windowId: number;
@@ -72,7 +81,15 @@ async function openSocket() {
   const socket = new WebSocket(`ws://127.0.0.1:${port ?? BRIDGE_PORT}`);
   ws = socket;
   // Say hello on this socket itself, not on whichever socket `ws` points to by then.
-  socket.onopen = () => socket.send(JSON.stringify({ type: 'hello', token, version: PROTOCOL_VERSION, extensionVersion: chrome.runtime.getManifest().version } satisfies FromExtension));
+  socket.onopen = () =>
+    socket.send(
+      JSON.stringify({
+        type: 'hello',
+        token,
+        version: PROTOCOL_VERSION,
+        extensionVersion: chrome.runtime.getManifest().version,
+      } satisfies FromExtension),
+    );
   socket.onmessage = (ev) => {
     const msg = parseFrame(ToExtension, String(ev.data));
     if (!msg) return;
@@ -113,7 +130,11 @@ async function toTab<T>(tabId: number, msg: ToContent, timeoutMs = 8000): Promis
       if (res && !res.ok) throw new Error(res.error);
     } catch (e) {
       last = e;
-      if (e instanceof Error && !/Receiving end does not exist|Could not establish connection|message port closed/i.test(e.message)) throw e;
+      if (
+        e instanceof Error &&
+        !/Receiving end does not exist|Could not establish connection|message port closed/i.test(e.message)
+      )
+        throw e;
     }
     await sleep(120);
   }
@@ -137,9 +158,69 @@ async function waitForLoad(tabId: number, timeoutMs = 15000) {
   if (!(await documentUsable(tabId))) throw new Error('page did not load in 15 s');
 }
 
+// Loaded is not the same as ready on heavy pages: also wait for the network to go quiet and the
+// layout to stop shifting for 500 ms, at most 4 s.
+async function waitForSettle(tabId: number) {
+  await waitForLoad(tabId);
+  await chrome.scripting
+    .executeScript({ target: { tabId }, func: settleFrame, args: [500, 4000] })
+    .catch(() => undefined);
+}
+
+// The top frame, plus frames that belong to consent and bot-check providers. Ad-heavy pages have
+// dozens of ad frames; visiting every one made a single look take fifteen seconds.
+const PROVIDER_FRAME =
+  /consent|sourcepoint|privacy-mgmt|cmp|cookielaw|onetrust|trustarc|usercentrics|didomi|quantcast|cookiebot|privacy-center|recaptcha|hcaptcha|challenges\.cloudflare|turnstile|arkoselabs|captcha/i;
+async function tidyFrames(tabId: number): Promise<number[]> {
+  const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? [];
+  return [0, ...frames.filter((f) => f.frameId !== 0 && PROVIDER_FRAME.test(f.url)).map((f) => f.frameId)];
+}
+
+// Before a lane looks: clear consent banners and pop-ups, and spot bot checks.
+async function tidy(tabId: number): Promise<TidyReport> {
+  const merged: TidyReport = { tidied: [] };
+  for (let pass = 0; pass < 2; pass++) {
+    const results = await chrome.scripting
+      .executeScript({ target: { tabId, frameIds: await tidyFrames(tabId) }, func: tidyFrame })
+      .catch(() => []);
+    const reports = results.map((r) => r.result as TidyReport | undefined).filter((r): r is TidyReport => !!r);
+    const cleared = reports.flatMap((r) => r.tidied);
+    merged.tidied.push(...cleared);
+    merged.captcha ??= reports.find((r) => r.captcha)?.captcha;
+    merged.consent = reports.find((r) => r.consent?.length)?.consent;
+    // A banner often gives way to a second one (or a page reload): look once more.
+    if (!cleared.length || merged.captcha) break;
+    await sleep(600);
+    await waitForSettle(tabId);
+  }
+  return merged;
+}
+
+async function chord(tabId: number, key: string, code: string, vk: number, modifiers: number) {
+  await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk, modifiers });
+  await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, modifiers });
+}
+
+async function rectOf(tabId: number, selector: string): Promise<{ x: number; y: number } | null> {
+  const r = await cdp<{ result: { value?: { x: number; y: number } | null } }>(tabId, 'Runtime.evaluate', {
+    expression: `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 40) }; })()`,
+    returnByValue: true,
+  });
+  return r.result.value ?? null;
+}
+
+async function readExport(tabId: number, kind: 'sheet' | 'doc', range: string | null): Promise<string> {
+  const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: exportText, args: [kind, range] });
+  if (typeof r?.result !== 'string') throw new Error('the file could not be read');
+  return r.result;
+}
+
 async function documentUsable(tabId: number): Promise<boolean> {
   try {
-    const r = await cdpSend<{ result: { value?: string } }>(tabId, 'Runtime.evaluate', { expression: 'document.readyState', returnByValue: true });
+    const r = await cdpSend<{ result: { value?: string } }>(tabId, 'Runtime.evaluate', {
+      expression: 'document.readyState',
+      returnByValue: true,
+    });
     return r.result.value === 'interactive' || r.result.value === 'complete';
   } catch {
     return false;
@@ -150,7 +231,9 @@ async function documentUsable(tabId: number): Promise<boolean> {
 function cdpSend<T>(tabId: number, method: string, params: Record<string, unknown>): Promise<T> {
   return Promise.race([
     chrome.debugger.sendCommand({ tabId }, method, params) as Promise<T>,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${method} got no answer in 8 s (is the lane window hidden?)`)), 8000)),
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${method} got no answer in 8 s (is the lane window hidden?)`)), 8000),
+    ),
   ]);
 }
 
@@ -175,13 +258,29 @@ async function attach(tabId: number) {
   }
   // The person keeps using their own mouse and windows while lanes work. Without this, a lane page
   // loses focus whenever another window is active, and text it types goes nowhere.
-  await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => undefined);
+  await chrome.debugger
+    .sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true })
+    .catch(() => undefined);
 }
 
 async function mouse(tabId: number, x: number, y: number) {
   await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-  await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
-  await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+  await cdp(tabId, 'Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x,
+    y,
+    button: 'left',
+    buttons: 1,
+    clickCount: 1,
+  });
+  await cdp(tabId, 'Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x,
+    y,
+    button: 'left',
+    buttons: 0,
+    clickCount: 1,
+  });
 }
 
 const KEYS: Record<string, { code: string; vk: number; text?: string }> = {
@@ -198,7 +297,13 @@ const KEYS: Record<string, { code: string; vk: number; text?: string }> = {
 async function key(tabId: number, name: string) {
   const k = KEYS[name];
   if (!k) throw new Error(`unknown key ${name}`);
-  await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyDown', key: name, code: k.code, windowsVirtualKeyCode: k.vk, text: k.text });
+  await cdp(tabId, 'Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: name,
+    code: k.code,
+    windowsVirtualKeyCode: k.vk,
+    text: k.text,
+  });
   await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyUp', key: name, code: k.code, windowsVirtualKeyCode: k.vk });
 }
 
@@ -258,7 +363,12 @@ async function execute(c: Command): Promise<unknown> {
       if (existing) await closeLane(existing);
       // Lanes open in front: they are meant to be watched, and Chrome stops drawing (and stalls
       // DevTools input for) windows that are completely covered by others.
-      const win = await chrome.windows.create({ url: c.url, focused: true, type: 'normal', ...(c.bounds ?? { width: 1280, height: 860 }) });
+      const win = await chrome.windows.create({
+        url: c.url,
+        focused: true,
+        type: 'normal',
+        ...(c.bounds ?? { width: 1280, height: 860 }),
+      });
       const tabId = win?.tabs?.[0]?.id;
       if (!win?.id || tabId === undefined) throw new Error('could not open a lane window');
       const l: Lane = { laneId: c.laneId, color: c.color, title: c.title, thinking: '', windowId: win.id, tabId };
@@ -274,6 +384,62 @@ async function execute(c: Command): Promise<unknown> {
       await closeLane(lane(c.laneId));
       return true;
 
+    case 'focusLane': {
+      const l = lane(c.laneId);
+      await chrome.windows.update(l.windowId, { focused: true, drawAttention: true });
+      return true;
+    }
+
+    // Google Sheets: the Name Box moves to a cell; values are typed with Tab between cells and Enter
+    // at the end of each row, which brings Sheets back to the starting column.
+    case 'sheetWrite': {
+      const l = lane(c.laneId);
+      await waitForSettle(l.tabId);
+      const box = await rectOf(l.tabId, '#t-name-box');
+      if (!box) throw new Error('the Name Box is not on this page; is this a Google Sheet?');
+      await toTab(l.tabId, { kind: 'moveCursor', x: box.x, y: box.y }).catch(() => undefined);
+      await mouse(l.tabId, box.x, box.y);
+      await chord(l.tabId, 'a', 'KeyA', 65, 2);
+      await cdp(l.tabId, 'Input.insertText', { text: c.cell });
+      await key(l.tabId, 'Enter');
+      await sleep(300);
+      for (const row of c.rows) {
+        for (const [j, v] of row.entries()) {
+          if (v) await cdp(l.tabId, 'Input.insertText', { text: v });
+          if (j < row.length - 1) await key(l.tabId, 'Tab');
+        }
+        await key(l.tabId, 'Enter');
+        await sleep(60);
+      }
+      // Sheets saves on its own a moment after typing stops.
+      await sleep(1500);
+      return true;
+    }
+
+    case 'sheetRead':
+      return readExport(lane(c.laneId).tabId, 'sheet', c.range ?? null);
+
+    // Google Docs: click into the document, go to its end, and type; Enter starts a new paragraph.
+    case 'docWrite': {
+      const l = lane(c.laneId);
+      await waitForSettle(l.tabId);
+      const page = (await rectOf(l.tabId, '.kix-page-paginated')) ?? (await rectOf(l.tabId, '.kix-appview-editor'));
+      if (!page) throw new Error('the document page is not on this page; is this a Google Doc?');
+      await toTab(l.tabId, { kind: 'moveCursor', x: page.x, y: page.y }).catch(() => undefined);
+      await mouse(l.tabId, page.x, page.y);
+      await chord(l.tabId, 'End', 'End', 35, 2);
+      const paragraphs = c.text.split(/\r?\n/);
+      for (const [i, p] of paragraphs.entries()) {
+        if (p) await cdp(l.tabId, 'Input.insertText', { text: p });
+        if (i < paragraphs.length - 1) await key(l.tabId, 'Enter');
+      }
+      await sleep(1500);
+      return true;
+    }
+
+    case 'docRead':
+      return readExport(lane(c.laneId).tabId, 'doc', null);
+
     case 'navigate': {
       const l = lane(c.laneId);
       await chrome.tabs.update(l.tabId, { url: c.url });
@@ -284,7 +450,8 @@ async function execute(c: Command): Promise<unknown> {
 
     case 'look': {
       const l = lane(c.laneId);
-      await waitForLoad(l.tabId);
+      await waitForSettle(l.tabId);
+      const tidied = await tidy(l.tabId);
       const page = await toTab<CollectResult>(l.tabId, { kind: 'collect', showMarks: c.screenshot });
       let screenshot: string | undefined;
       let scale = page.dpr;
@@ -297,7 +464,13 @@ async function execute(c: Command): Promise<unknown> {
           const shot = await cdp<{ data: string }>(l.tabId, 'Page.captureScreenshot', {
             format: 'jpeg',
             quality: 82,
-            clip: { x: page.scroll.x, y: page.scroll.y, width: page.viewport.width, height: page.viewport.height, scale: s },
+            clip: {
+              x: page.scroll.x,
+              y: page.scroll.y,
+              width: page.viewport.width,
+              height: page.viewport.height,
+              scale: s,
+            },
           });
           screenshot = shot.data;
         } finally {
@@ -305,7 +478,25 @@ async function execute(c: Command): Promise<unknown> {
           await toTab(l.tabId, { kind: 'cursorVisible', visible: true });
         }
       }
-      const result: LookResult = { url: page.url, title: page.title, viewport: page.viewport, scale, screenshot, elements: page.elements, text: page.text, hidden: page.hidden };
+      const app = /docs\.google\.com\/spreadsheets\//.test(page.url)
+        ? 'sheets'
+        : /docs\.google\.com\/document\//.test(page.url)
+          ? 'docs'
+          : undefined;
+      const result: LookResult = {
+        url: page.url,
+        title: page.title,
+        viewport: page.viewport,
+        scale,
+        screenshot,
+        elements: page.elements,
+        text: page.text,
+        hidden: page.hidden,
+        tidied: tidied.tidied,
+        blocker: tidied.captcha ? { kind: 'captcha', text: tidied.captcha.slice(0, 300) } : undefined,
+        consent: tidied.consent,
+        app,
+      };
       return result;
     }
 
@@ -321,7 +512,7 @@ async function execute(c: Command): Promise<unknown> {
       await mouse(l.tabId, pos.x, pos.y);
       // Give a navigation a moment to start before anyone waits for the load.
       await sleep(200);
-      await waitForLoad(l.tabId);
+      await waitForSettle(l.tabId);
       return { x: pos.x, y: pos.y, name: pos.name };
     }
 
@@ -337,8 +528,21 @@ async function execute(c: Command): Promise<unknown> {
       }
       await mouse(l.tabId, pos.x, pos.y);
       // Replace what is there: select all, then insert.
-      await cdp(l.tabId, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2, commands: ['selectAll'] });
-      await cdp(l.tabId, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 });
+      await cdp(l.tabId, 'Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 2,
+        commands: ['selectAll'],
+      });
+      await cdp(l.tabId, 'Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 2,
+      });
       await cdp(l.tabId, 'Input.insertText', { text: c.text });
       if (c.submit) {
         await key(l.tabId, 'Enter');
@@ -418,7 +622,8 @@ let rehearsal: { startedAt: number } | null = null;
 
 async function broadcast(msg: ToContent) {
   for (const tab of await chrome.tabs.query({})) {
-    if (tab.id !== undefined && /^https?:|^file:/.test(tab.url ?? '')) chrome.tabs.sendMessage(tab.id, msg).catch(() => undefined);
+    if (tab.id !== undefined && /^https?:|^file:/.test(tab.url ?? ''))
+      chrome.tabs.sendMessage(tab.id, msg).catch(() => undefined);
   }
 }
 
@@ -471,7 +676,19 @@ async function onRest(r: RestReport, tab: chrome.tabs.Tab | undefined): Promise<
       event: {
         kind: 'anchor',
         cueId: c.id,
-        anchor: { n, at, source: 'chrome', url: r.url, title: r.title, tabId: tab.id, laneId: laneByTab(tab.id)?.laneId, point: r.point, rect: r.rect, target: r.target, screenshot },
+        anchor: {
+          n,
+          at,
+          source: 'chrome',
+          url: r.url,
+          title: r.title,
+          tabId: tab.id,
+          laneId: laneByTab(tab.id)?.laneId,
+          point: r.point,
+          rect: r.rect,
+          target: r.target,
+          screenshot,
+        },
       },
     });
   })();
@@ -485,7 +702,11 @@ chrome.runtime.onMessage.addListener((msg: ToWorker, sender, reply) => {
   }
   if (msg.kind === 'recorded') {
     // Only the person's own tabs are recorded, never lane windows.
-    if (rehearsal && !laneByTab(sender.tab?.id)) send({ type: 'event', event: { kind: 'recorded', step: { ...msg.step, at: Date.now() - rehearsal.startedAt } as never } });
+    if (rehearsal && !laneByTab(sender.tab?.id))
+      send({
+        type: 'event',
+        event: { kind: 'recorded', step: { ...msg.step, at: Date.now() - rehearsal.startedAt } as never },
+      });
     return false;
   }
   if (msg.kind === 'rest') {
@@ -532,7 +753,8 @@ chrome.runtime.onStartup.addListener(() => void connect());
 chrome.runtime.onInstalled.addListener(async () => {
   void connect();
   for (const tab of await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })) {
-    if (tab.id !== undefined) chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => undefined);
+    if (tab.id !== undefined)
+      chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => undefined);
   }
 });
 void connect();

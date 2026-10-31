@@ -4,7 +4,18 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CueMove, Profile, Score, cueMessages, runScore, tile, type LaneOutcome, type PartResult, type PreApproval, type Supervisor } from '@baton/core';
+import {
+  CueMove,
+  Profile,
+  Score,
+  cueMessages,
+  runScore,
+  tile,
+  type LaneOutcome,
+  type PartResult,
+  type PreApproval,
+  type Supervisor,
+} from '@baton/core';
 import type { Model } from '@baton/model';
 import { screen } from 'electron';
 import { MULTI_TASKS, type MultiTask } from '../../../../bench/multi';
@@ -38,21 +49,39 @@ async function reset() {
 
 function preApproval(task: MultiTask): PreApproval | undefined {
   if (!task.preApprove?.length) return undefined;
-  return { categories: [...new Set(task.preApprove.map((p) => p.category))], hosts: [...new Set(task.preApprove.map((p) => p.host))] };
+  return {
+    categories: [...new Set(task.preApprove.map((p) => p.category))],
+    hosts: [...new Set(task.preApprove.map((p) => p.host))],
+  };
 }
 
 async function plan(model: Model, task: MultiTask): Promise<Score> {
   const profile = Profile.parse(JSON.parse(readFileSync(join(repoRoot, 'demo-sites', 'profile.json'), 'utf8')));
-  const r = await model.json(CueMove, toOpenAI(cueMessages({ transcript: task.request, intent: '', anchors: [], references: [], profile, sites: SITES })), 'low');
+  const r = await model.json(
+    CueMove,
+    toOpenAI(cueMessages({ transcript: task.request, intent: '', anchors: [], references: [], profile, sites: SITES })),
+    'low',
+  );
   const move = r.value;
   if (move.kind === 'score') return Score.parse(move);
-  if (move.kind === 'task') return Score.parse({ title: move.name, parts: [{ id: 'task', name: move.name, goal: move.goal, startUrl: move.startUrl }] });
+  if (move.kind === 'task')
+    return Score.parse({
+      title: move.name,
+      parts: [{ id: 'task', name: move.name, goal: move.goal, startUrl: move.startUrl }],
+    });
   throw new Error(`planned as ${move.kind}, not a task`);
 }
 
-const textOf = (o: { result: string; data?: unknown; notes?: string[] }) => [o.result, o.data === undefined ? '' : JSON.stringify(o.data), ...(o.notes ?? [])].join('\n');
+const textOf = (o: { result: string; data?: unknown; notes?: string[] }) =>
+  [o.result, o.data === undefined ? '' : JSON.stringify(o.data), ...(o.notes ?? [])].join('\n');
 
-async function sequential(bridge: BridgeServer, model: Model, task: MultiTask, score: Score, runId: string): Promise<ModeResult> {
+async function sequential(
+  bridge: BridgeServer,
+  model: Model,
+  task: MultiTask,
+  score: Score,
+  runId: string,
+): Promise<ModeResult> {
   const goal = `Do all of these, one after another, then finish with every result:\n${score.parts.map((p, i) => `${i + 1}. ${p.goal}`).join('\n')}`;
   const { workArea } = screen.getPrimaryDisplay();
   const t0 = Date.now();
@@ -65,10 +94,23 @@ async function sequential(bridge: BridgeServer, model: Model, task: MultiTask, s
     bounds: tile(1, workArea, 110)[0],
   });
   const check = await task.check({ text: textOf(out), json: (u) => fetch(u).then((r) => r.json()) });
-  return { ...check, ok: check.ok && out.status === 'done', seconds: (Date.now() - t0) / 1000, steps: out.steps, costUsd: costUsd(out.usage), lanes: 1 };
+  return {
+    ...check,
+    ok: check.ok && out.status === 'done',
+    seconds: (Date.now() - t0) / 1000,
+    steps: out.steps,
+    costUsd: costUsd(out.usage),
+    lanes: 1,
+  };
 }
 
-async function parallel(bridge: BridgeServer, model: Model, task: MultiTask, score: Score, runId: string): Promise<ModeResult> {
+async function parallel(
+  bridge: BridgeServer,
+  model: Model,
+  task: MultiTask,
+  score: Score,
+  runId: string,
+): Promise<ModeResult> {
   const { workArea } = screen.getPrimaryDisplay();
   const bounds = tile(score.parts.length, workArea, 110);
   const outcomes: LaneOutcome[] = [];
@@ -90,7 +132,10 @@ async function parallel(bridge: BridgeServer, model: Model, task: MultiTask, sco
   });
   const seconds = (Date.now() - t0) / 1000;
   const all = Object.values(results);
-  const check = await task.check({ text: all.map((r) => r.result).join('\n'), json: (u) => fetch(u).then((r) => r.json()) });
+  const check = await task.check({
+    text: all.map((r) => r.result).join('\n'),
+    json: (u) => fetch(u).then((r) => r.json()),
+  });
   return {
     ...check,
     ok: check.ok && all.every((r) => r.status === 'done'),
@@ -104,7 +149,14 @@ async function parallel(bridge: BridgeServer, model: Model, task: MultiTask, sco
 export async function runMultiBench(bridge: BridgeServer, model: Model, only?: string[]) {
   const tasks = MULTI_TASKS.filter((t) => !only || only.includes(t.id));
   const runId = `bench-multi-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-  const rows: Array<{ id: string; parts: number; plan?: string; sequential?: ModeResult; parallel?: ModeResult; error?: string }> = [];
+  const rows: Array<{
+    id: string;
+    parts: number;
+    plan?: string;
+    sequential?: ModeResult;
+    parallel?: ModeResult;
+    error?: string;
+  }> = [];
   log(`BENCH_MULTI ${runId}: ${tasks.length} tasks`);
   for (const task of tasks) {
     const row: (typeof rows)[number] = { id: task.id, parts: 0 };
@@ -114,10 +166,14 @@ export async function runMultiBench(bridge: BridgeServer, model: Model, only?: s
       row.plan = score.parts.map((p) => `${p.id}${p.dependsOn.length ? `←${p.dependsOn.join('+')}` : ''}`).join(', ');
       await reset();
       row.sequential = await sequential(bridge, model, task, score, runId);
-      log(`BENCH_MULTI ${task.id} one lane: ${row.sequential.ok ? 'PASS' : 'FAIL'} ${row.sequential.seconds.toFixed(0)} s — ${row.sequential.detail}`);
+      log(
+        `BENCH_MULTI ${task.id} one lane: ${row.sequential.ok ? 'PASS' : 'FAIL'} ${row.sequential.seconds.toFixed(0)} s — ${row.sequential.detail}`,
+      );
       await reset();
       row.parallel = await parallel(bridge, model, task, score, runId);
-      log(`BENCH_MULTI ${task.id} conductor (${row.parts} lanes): ${row.parallel.ok ? 'PASS' : 'FAIL'} ${row.parallel.seconds.toFixed(0)} s — ${row.parallel.detail}`);
+      log(
+        `BENCH_MULTI ${task.id} conductor (${row.parts} lanes): ${row.parallel.ok ? 'PASS' : 'FAIL'} ${row.parallel.seconds.toFixed(0)} s — ${row.parallel.detail}`,
+      );
     } catch (e) {
       row.error = (e as Error).message;
       log(`BENCH_MULTI ${task.id} error: ${row.error}`);
@@ -131,7 +187,10 @@ export async function runMultiBench(bridge: BridgeServer, model: Model, only?: s
   const parPass = done.filter((r) => r.parallel!.ok).length;
   const dir = join(repoRoot, 'bench', 'runs');
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${runId}.json`), JSON.stringify({ runId, model: 'meta-models/muse-spark-open-1026', rows }, null, 2));
+  writeFileSync(
+    join(dir, `${runId}.json`),
+    JSON.stringify({ runId, model: 'meta-models/muse-spark-open-1026', rows }, null, 2),
+  );
   const f = (s: number) => s.toFixed(0);
   const table = [
     `# Baton benchmark — one lane in sequence vs the conductor in parallel (${runId})`,
@@ -153,5 +212,7 @@ export async function runMultiBench(bridge: BridgeServer, model: Model, only?: s
     '',
   ].join('\n');
   writeFileSync(join(repoRoot, 'bench', 'results-parallel.md'), table);
-  log(`BENCH_MULTI_DONE one lane ${seqPass}/${done.length} in ${f(sum((r) => r.sequential!.seconds))} s · conductor ${parPass}/${done.length} in ${f(sum((r) => r.parallel!.seconds))} s`);
+  log(
+    `BENCH_MULTI_DONE one lane ${seqPass}/${done.length} in ${f(sum((r) => r.sequential!.seconds))} s · conductor ${parPass}/${done.length} in ${f(sum((r) => r.parallel!.seconds))} s`,
+  );
 }

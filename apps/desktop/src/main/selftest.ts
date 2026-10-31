@@ -17,7 +17,10 @@ export interface SelfTestResult {
   error?: string;
 }
 
-export async function laneSelfTest(bridge: BridgeServer, bounds?: { left: number; top: number; width: number; height: number }): Promise<SelfTestResult> {
+export async function laneSelfTest(
+  bridge: BridgeServer,
+  bounds?: { left: number; top: number; width: number; height: number },
+): Promise<SelfTestResult> {
   const dir = outDir('selftest');
   const steps: SelfTestResult['steps'] = [];
   const screenshots: string[] = [];
@@ -36,18 +39,46 @@ export async function laneSelfTest(bridge: BridgeServer, bounds?: { left: number
   };
 
   try {
-    await step('openLane', () => bridge.request({ op: 'openLane', laneId: 'blue', url: LEDGERLY, color: '#4d7bd8', title: 'Blue · Ledgerly', bounds }), () => 'lane window open on Ledgerly');
+    await step(
+      'openLane',
+      () =>
+        bridge.request({
+          op: 'openLane',
+          laneId: 'blue',
+          url: LEDGERLY,
+          color: '#4d7bd8',
+          title: 'Blue · Ledgerly',
+          bounds,
+        }),
+      () => 'lane window open on Ledgerly',
+    );
     await bridge.request({ op: 'setThinking', laneId: 'blue', text: 'Looking for the New bill button' });
-    const before = await step('look', () => bridge.request<LookResult>({ op: 'look', laneId: 'blue' }, 20000), (l) => `${l.elements.length} marks on ${l.url}`);
+    const before = await step(
+      'look',
+      () => bridge.request<LookResult>({ op: 'look', laneId: 'blue' }, 20000),
+      (l) => `${l.elements.length} marks on ${l.url}`,
+    );
     save('1-before-marks.jpg', before);
     const target = before.elements.find((e) => /new bill/i.test(e.name));
     if (!target) throw new Error('no "New bill" element in the element list');
     await bridge.request({ op: 'setThinking', laneId: 'blue', text: `Found “${target.name}” at mark ${target.mark}` });
-    await step('moveCursor', () => bridge.request({ op: 'moveCursor', laneId: 'blue', mark: target.mark }), () => `cursor at mark ${target.mark} (${target.name})`);
+    await step(
+      'moveCursor',
+      () => bridge.request({ op: 'moveCursor', laneId: 'blue', mark: target.mark }),
+      () => `cursor at mark ${target.mark} (${target.name})`,
+    );
     await new Promise((r) => setTimeout(r, 400)); // let the eye settle on the target before clicking
-    await step('click', () => bridge.request({ op: 'click', laneId: 'blue', mark: target.mark }), () => `clicked mark ${target.mark}`);
+    await step(
+      'click',
+      () => bridge.request({ op: 'click', laneId: 'blue', mark: target.mark }),
+      () => `clicked mark ${target.mark}`,
+    );
     await bridge.request({ op: 'setThinking', laneId: 'blue', text: 'Checking the New bill form opened' });
-    const after = await step('verify', () => bridge.request<LookResult>({ op: 'look', laneId: 'blue' }, 20000), (l) => `${l.url} · ${l.elements.length} marks`);
+    const after = await step(
+      'verify',
+      () => bridge.request<LookResult>({ op: 'look', laneId: 'blue' }, 20000),
+      (l) => `${l.url} · ${l.elements.length} marks`,
+    );
     save('2-after-click-marks.jpg', after);
     const opened = after.url.endsWith('/bills/new') && after.elements.some((e) => /vendor/i.test(e.name));
     if (!opened) throw new Error(`expected the New bill form, got ${after.url}`);

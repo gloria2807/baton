@@ -11,18 +11,58 @@ export interface LaneView {
 }
 
 export type Card =
-  | { kind: 'approval'; id: number; laneId: string; laneName: string; color: string; summary: string; reason: string; image?: string }
+  | {
+      kind: 'approval';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      summary: string;
+      reason: string;
+      image?: string;
+    }
   | { kind: 'question'; id: number; laneId: string; laneName: string; color: string; question: string }
-  | { kind: 'injection'; id: number; laneId: string; laneName: string; color: string; url: string; findings: Array<{ source: string; text: string }> }
-  | { kind: 'result'; id: number; laneId: string; laneName: string; color: string; status: string; result: string; detail: string }
-  | { kind: 'rehearsal'; id: number; laneId: string; laneName: string; color: string; steps: string[]; recording: boolean }
+  | {
+      kind: 'injection';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      url: string;
+      findings: Array<{ source: string; text: string }>;
+    }
+  | {
+      kind: 'result';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      status: string;
+      result: string;
+      detail: string;
+    }
+  | {
+      kind: 'rehearsal';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      steps: string[];
+      recording: boolean;
+    }
   | {
       kind: 'routine';
       id: number;
       laneId: string;
       laneName: string;
       color: string;
-      routine: { name: string; summary: string; itemKind: string; variables: Array<{ name: string; description: string; example: string }>; steps: Array<{ do: string }> };
+      routine: {
+        name: string;
+        summary: string;
+        itemKind: string;
+        variables: Array<{ name: string; description: string; example: string }>;
+        steps: Array<{ do: string }>;
+      };
     }
   | {
       kind: 'score';
@@ -80,12 +120,22 @@ function Head({ card, label }: { card: Card; label: string }) {
   );
 }
 
-const PART_STATE: Record<string, string> = { done: 'done', stopped: 'stopped', failed: 'failed', skipped: 'skipped', running: 'working', waiting: 'waiting', 'waiting-approval': 'needs your yes' };
+const PART_STATE: Record<string, string> = {
+  done: 'done',
+  stopped: 'stopped',
+  failed: 'failed',
+  skipped: 'skipped',
+  running: 'working',
+  waiting: 'waiting',
+  'waiting-approval': 'needs your yes',
+};
 
 // The learned routine, with its variables editable before Baton performs it.
 function RoutineCard({ card }: { card: Extract<Card, { kind: 'routine' }> }) {
   const [vars, setVars] = useState(card.routine.variables.map((v) => ({ name: v.name, description: v.description })));
-  const changed = vars.some((v, i) => v.name !== card.routine.variables[i]!.name || v.description !== card.routine.variables[i]!.description);
+  const changed = vars.some(
+    (v, i) => v.name !== card.routine.variables[i]!.name || v.description !== card.routine.variables[i]!.description,
+  );
   return (
     <div className="card routine">
       <Head card={card} label="learned" />
@@ -99,15 +149,37 @@ function RoutineCard({ card }: { card: Extract<Card, { kind: 'routine' }> }) {
       <div className="vars">
         {vars.map((v, i) => (
           <div className="var" key={i}>
-            <input value={v.name} aria-label="Variable name" onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') } : x)))} />
-            <input value={v.description} aria-label="Where to find it" onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
+            <input
+              value={v.name}
+              aria-label="Variable name"
+              onChange={(e) =>
+                setVars(
+                  vars.map((x, j) =>
+                    j === i ? { ...x, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') } : x,
+                  ),
+                )
+              }
+            />
+            <input
+              value={v.description}
+              aria-label="Where to find it"
+              onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))}
+            />
             <span className="example">e.g. {card.routine.variables[i]!.example}</span>
           </div>
         ))}
       </div>
       <div className="card-actions">
         <span className="hint">Say “now do the rest” to perform it.</span>
-        <button className="btn" onClick={() => answer(card.id, changed ? { text: JSON.stringify(vars.map((v, index) => ({ index, ...v }))) } : { choice: 'dismiss' })}>
+        <button
+          className="btn"
+          onClick={() =>
+            answer(
+              card.id,
+              changed ? { text: JSON.stringify(vars.map((v, index) => ({ index, ...v }))) } : { choice: 'dismiss' },
+            )
+          }
+        >
           {changed ? 'Save changes' : 'Looks right'}
         </button>
       </div>
@@ -155,7 +227,8 @@ export function CardView({ card }: { card: Card }) {
             ))}
             {card.parts.length > 8 && (
               <li className="more">
-                …and {card.parts.length - 8} more · {card.parts.filter((p) => p.status === 'done').length} of {card.parts.length} done
+                …and {card.parts.length - 8} more · {card.parts.filter((p) => p.status === 'done').length} of{' '}
+                {card.parts.length} done
               </li>
             )}
           </ul>
@@ -174,7 +247,8 @@ export function CardView({ card }: { card: Card }) {
           )}
           <div className="card-actions">
             <span className="hint">
-              {card.seconds} s · about {card.manualMinutes} min by hand{card.approvals.length ? ' · or say “yes” / “no”' : ''}
+              {card.seconds} s · about {card.manualMinutes} min by hand
+              {card.approvals.length ? ' · or say “yes” / “no”' : ''}
             </span>
             {card.approvals.length ? (
               <>
@@ -261,7 +335,10 @@ export function CardView({ card }: { card: Card }) {
     case 'result':
       return (
         <div className={`card result status-${card.status}`}>
-          <Head card={card} label={card.status === 'done' ? 'finished' : card.status === 'answer' ? 'answered' : card.status} />
+          <Head
+            card={card}
+            label={card.status === 'done' ? 'finished' : card.status === 'answer' ? 'answered' : card.status}
+          />
           <div className="card-title">{card.result}</div>
           <div className="card-actions">
             <span className="hint">{card.detail}</span>

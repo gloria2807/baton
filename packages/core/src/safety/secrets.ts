@@ -1,7 +1,8 @@
 // Passwords and codes a person says or writes in a goal are never needed by a lane (it cannot type
 // them, rule 2), so they are masked before the model, receipts or logs ever see the goal.
 
-const SECRET = /\b(password|passcode|passphrase|pin|one[- ]time code|otp|security code|cvc|cvv)(\s*(?:is|was|=|:)\s*|\s+)("[^"]*"|“[^”]*”|'[^']*'|\S+)/gi;
+const SECRET =
+  /\b(password|passcode|passphrase|pin|one[- ]time code|otp|security code|cvc|cvv)(\s*(?:is|was|=|:)\s*|\s+)("[^"]*"|“[^”]*”|'[^']*'|\S+)/gi;
 const CARD = /\b\d(?:[ -]?\d){12,18}\b/g;
 
 export function redactSecrets(text: string): string {

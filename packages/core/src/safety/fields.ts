@@ -22,8 +22,14 @@ const AUTOCOMPLETE: Array<[RegExp, BlockReason]> = [
 // Matched against name, id and label together.
 const WORDS: Array<[RegExp, BlockReason]> = [
   [/pass(word|wd|code|phrase)|\bpwd\b|\bpin\b/i, 'password'],
-  [/one[\s_-]?time|\botp\b|verification[\s_-]?code|security[\s_-]?code|2fa|mfa|auth(entication)?[\s_-]?code/i, 'one-time-code'],
-  [/card[\s_-]?(number|no|num)|\bcc[\s_-]?(num|number|no)?\b|credit[\s_-]?card|debit[\s_-]?card|\bcvc\b|\bcvv\b|\bcsc\b|\bexpir(y|ation)\b|\bexp[\s_-]?date\b|\bmm\s*\/\s*yy\b|\biban\b|account[\s_-]?number|routing[\s_-]?number|sort[\s_-]?code/i, 'payment-card'],
+  [
+    /one[\s_-]?time|\botp\b|verification[\s_-]?code|security[\s_-]?code|2fa|mfa|auth(entication)?[\s_-]?code/i,
+    'one-time-code',
+  ],
+  [
+    /card[\s_-]?(number|no|num)|\bcc[\s_-]?(num|number|no)?\b|credit[\s_-]?card|debit[\s_-]?card|\bcvc\b|\bcvv\b|\bcsc\b|\bexpir(y|ation)\b|\bexp[\s_-]?date\b|\bmm\s*\/\s*yy\b|\biban\b|account[\s_-]?number|routing[\s_-]?number|sort[\s_-]?code/i,
+    'payment-card',
+  ],
 ];
 
 export function blockedFieldReason(f: FieldFacts): BlockReason | null {

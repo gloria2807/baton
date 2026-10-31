@@ -37,7 +37,10 @@ describe('cleaning recorded rehearsals', () => {
 
   it('marks where each variable came from', () => {
     const hints = variableHints(cleanRehearsal(steps(all[0]!)));
-    expect(hints.find((h) => h.value === 'INV-2307')).toMatchObject({ source: 'copied', from: 'http://localhost:4400/m/inv-2' });
+    expect(hints.find((h) => h.value === 'INV-2307')).toMatchObject({
+      source: 'copied',
+      from: 'http://localhost:4400/m/inv-2',
+    });
     expect(hints.find((h) => h.value === '527.40')).toMatchObject({ source: 'page' });
   });
 });
@@ -52,7 +55,11 @@ describe('compiling and performing a routine', () => {
       { name: 'vendor', description: 'the Vendor line of the email', example: 'Bluefin Cleaning Services' },
       { name: 'reference', description: 'the Invoice number line', example: 'INV-2307' },
     ],
-    steps: [{ do: 'Open the invoice email' }, { do: 'In Ledgerly, click + New bill and fill Vendor {vendor} and Reference {reference}' }, { do: 'Click Save bill' }],
+    steps: [
+      { do: 'Open the invoice email' },
+      { do: 'In Ledgerly, click + New bill and fill Vendor {vendor} and Reference {reference}' },
+      { do: 'Click Save bill' },
+    ],
     doneCheck: 'a bill with reference {reference} is in the Ledgerly list',
   });
 
@@ -66,27 +73,39 @@ describe('compiling and performing a routine', () => {
   });
 
   it('rejects malformed routines', () => {
-    expect(Routine.safeParse({ ...routine, variables: [{ name: 'Vendor Name', description: 'x', example: 'y' }] }).success).toBe(false);
+    expect(
+      Routine.safeParse({ ...routine, variables: [{ name: 'Vendor Name', description: 'x', example: 'y' }] }).success,
+    ).toBe(false);
     expect(Routine.safeParse({ ...routine, steps: [] }).success).toBe(false);
     expect(Routine.safeParse({ ...routine, itemSourceUrl: 'inbox' }).success).toBe(false);
   });
 
   it('gives each lane one item, the steps, the variables and the duplicate check', () => {
-    const goal = performGoal(routine, { title: 'Invoice INV-2321 from Ironbark Logistics', url: 'http://localhost:4400/m/inv-6' });
-    expect(goal).toContain('for one invoice email: “Invoice INV-2321 from Ironbark Logistics” at http://localhost:4400/m/inv-6');
+    const goal = performGoal(routine, {
+      title: 'Invoice INV-2321 from Ironbark Logistics',
+      url: 'http://localhost:4400/m/inv-6',
+    });
+    expect(goal).toContain(
+      'for one invoice email: “Invoice INV-2321 from Ironbark Logistics” at http://localhost:4400/m/inv-6',
+    );
     expect(goal).toContain('2. In Ledgerly, click + New bill and fill Vendor {vendor} and Reference {reference}');
     expect(goal).toContain('- {reference}: the Invoice number line (example from the rehearsal: “INV-2307”)');
-    expect(goal).toContain('check whether it was already done (a bill with reference {reference} is in the Ledgerly list)');
+    expect(goal).toContain(
+      'check whether it was already done (a bill with reference {reference} is in the Ledgerly list)',
+    );
   });
 });
 
 describe('rehearse and perform phrases', () => {
   it('are recognised without the model', async () => {
     const { routineCommand } = await import('../cue/interpret.js');
-    for (const t of ['Watch me.', 'Okay, watch me', 'watch this', 'Learn from me']) expect(routineCommand(t), t).toBe('rehearse');
-    for (const t of ['Now do the rest.', 'Do the rest', 'now do all the others', 'do them all']) expect(routineCommand(t), t).toBe('perform');
+    for (const t of ['Watch me.', 'Okay, watch me', 'watch this', 'Learn from me'])
+      expect(routineCommand(t), t).toBe('rehearse');
+    for (const t of ['Now do the rest.', 'Do the rest', 'now do all the others', 'do them all'])
+      expect(routineCommand(t), t).toBe('perform');
     for (const t of ["That's it.", 'Done', "I'm done", 'stop recording']) expect(routineCommand(t), t).toBe('finish');
-    for (const t of ['What is this?', 'Get me there', 'the vendor goes here', 'this is done by Friday']) expect(routineCommand(t), t).toBeNull();
+    for (const t of ['What is this?', 'Get me there', 'the vendor goes here', 'this is done by Friday'])
+      expect(routineCommand(t), t).toBeNull();
   });
 });
 

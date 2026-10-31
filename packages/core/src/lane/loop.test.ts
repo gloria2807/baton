@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { Element, LookResult } from '../bridge.js';
 import type { StepDecision } from './actions.js';
-import { runLane, type ApprovalRequest, type Brain, type Hands, type LaneStatus, type ReceiptSink, type StepRecord, type Supervisor } from './loop.js';
+import {
+  runLane,
+  type ApprovalRequest,
+  type Brain,
+  type Hands,
+  type LaneStatus,
+  type ReceiptSink,
+  type StepRecord,
+  type Supervisor,
+} from './loop.js';
 import type { LaneMessage } from './prompt.js';
 
 // ── A fake browser: a tiny accounts app with a sign-in page and a hostile page ──
@@ -11,7 +20,11 @@ interface FakeEl extends Omit<Element, 'mark' | 'rect'> {
 }
 const post = { method: 'post', action: '/bills', submitLabel: 'Save bill' };
 const PAGES: Record<string, { title: string; text: string; els: FakeEl[] }> = {
-  '/': { title: 'Bills', text: 'Bills\nBL-0418 Northgate', els: [{ tag: 'a', role: 'link', name: '+ New bill', goto: '/new' }] },
+  '/': {
+    title: 'Bills',
+    text: 'Bills\nBL-0418 Northgate',
+    els: [{ tag: 'a', role: 'link', name: '+ New bill', goto: '/new' }],
+  },
   '/new': {
     title: 'New bill',
     text: 'New bill',
@@ -46,12 +59,20 @@ class FakeHands implements Hands {
   scrollY = 0;
   values = new Map<string, string>();
   calls: string[] = [];
+  // What the next looks add (a bot check, a consent dialog, a canvas editor), one per look.
+  extra: Array<Partial<LookResult>> = [];
+  sheet = '';
   constructor(start = '/') {
     this.path = start;
   }
   private els(): Element[] {
     const page = PAGES[this.path.split('?')[0]!]!;
-    return page.els.map((e, i) => ({ ...e, mark: i + 1, rect: { x: 10, y: 40 * i, w: 100, h: 30 }, value: e.value === undefined ? undefined : (this.values.get(`${this.path}|${e.name}`) ?? '') }));
+    return page.els.map((e, i) => ({
+      ...e,
+      mark: i + 1,
+      rect: { x: 10, y: 40 * i, w: 100, h: 30 },
+      value: e.value === undefined ? undefined : (this.values.get(`${this.path}|${e.name}`) ?? ''),
+    }));
   }
   async look(screenshot: boolean): Promise<LookResult> {
     const page = PAGES[this.path.split('?')[0]!]!;
@@ -64,6 +85,8 @@ class FakeHands implements Hands {
       elements: this.els(),
       text: `${page.text}${this.scrollY ? `\nscrolled ${this.scrollY}` : ''}`,
       hidden: [],
+      tidied: [],
+      ...(this.extra.shift() ?? {}),
     };
   }
   async open(url: string) {
@@ -92,6 +115,16 @@ class FakeHands implements Hands {
   }
   async back() {}
   async thinking() {}
+  async focus() {
+    this.calls.push('focus');
+  }
+  async sheetWrite(cell: string, rows: string[][]) {
+    this.calls.push(`sheet ${cell} ${rows.length} rows`);
+    this.sheet += rows.map((r) => r.join(',')).join('\n');
+  }
+  async sheetRead() {
+    return this.sheet;
+  }
 }
 
 // ── A fake model that plays back scripted decisions ──
@@ -104,7 +137,12 @@ class FakeBrain implements Brain {
     // The last scripted decision repeats forever.
     const next = this.script.length > 1 ? this.script.shift() : this.script[0];
     if (!next) throw new Error('model output invalid after retry');
-    return { value: { thinking: 'thinking', expect: '', reason: 'because', ...next } as StepDecision, reasoning: '', ms: 1, usage: { input: 100, output: 10 } };
+    return {
+      value: { thinking: 'thinking', expect: '', reason: 'because', ...next } as StepDecision,
+      reasoning: '',
+      ms: 1,
+      usage: { input: 100, output: 10 },
+    };
   }
   async read() {
     return { value: { facts: 'BL-0418 is from Northgate' }, reasoning: '', ms: 1 };
@@ -124,9 +162,7 @@ class FakePerson implements Supervisor {
   questions: string[] = [];
   injections = 0;
   statuses: LaneStatus[] = [];
-  constructor(
-    private opts: { approve?: boolean; answer?: string | 'stop'; injection?: 'continue' | 'stop' } = {},
-  ) {}
+  constructor(private opts: { approve?: boolean; answer?: string | 'stop'; injection?: 'continue' | 'stop' } = {}) {}
   async approve(req: ApprovalRequest) {
     this.approvals.push(req);
     return this.opts.approve ?? false;
@@ -196,7 +232,10 @@ describe('lane loop', () => {
   });
 
   it('wraps page content as untrusted and carries notes forward', async () => {
-    const brain = new FakeBrain([{ action: { tool: 'read', what: 'first bill' } }, { action: { tool: 'finish', result: 'ok' } }]);
+    const brain = new FakeBrain([
+      { action: { tool: 'read', what: 'first bill' } },
+      { action: { tool: 'finish', result: 'ok' } },
+    ]);
     await run({ goal: 'g' }, new FakeHands(), brain, new FakePerson());
     expect(brain.userText(0)).toMatch(/<untrusted source="page text">\nBills/);
     expect(brain.userText(1)).toContain('first bill: BL-0418 is from Northgate');
@@ -204,7 +243,11 @@ describe('lane loop', () => {
 });
 
 describe('lane loop: approvals', () => {
-  const toSave = () => [{ action: { tool: 'click' as const, mark: 1 } }, { action: { tool: 'click' as const, mark: 2 } }, { action: { tool: 'finish' as const, result: 'saved' } }];
+  const toSave = () => [
+    { action: { tool: 'click' as const, mark: 1 } },
+    { action: { tool: 'click' as const, mark: 2 } },
+    { action: { tool: 'finish' as const, result: 'saved' } },
+  ];
 
   it('stops at an approval card and does nothing until approved', async () => {
     const hands = new FakeHands();
@@ -220,7 +263,12 @@ describe('lane loop: approvals', () => {
 
   it('acts once approved', async () => {
     const hands = new FakeHands();
-    const { outcome, receipts } = await run({ goal: 'save a bill' }, hands, new FakeBrain(toSave()), new FakePerson({ approve: true }));
+    const { outcome, receipts } = await run(
+      { goal: 'save a bill' },
+      hands,
+      new FakeBrain(toSave()),
+      new FakePerson({ approve: true }),
+    );
     expect(hands.calls).toEqual(['click 1', 'click 2']);
     expect(outcome.status).toBe('done');
     expect(receipts.steps[1]!.gate).toBe('approved');
@@ -228,7 +276,12 @@ describe('lane loop: approvals', () => {
 
   it('skips the card only for pre-approved categories on pre-approved hosts', async () => {
     const person = new FakePerson();
-    const { receipts } = await run({ goal: 'save', preApproved: { categories: ['submit'], hosts: ['app.test'] } }, new FakeHands(), new FakeBrain(toSave()), person);
+    const { receipts } = await run(
+      { goal: 'save', preApproved: { categories: ['submit'], hosts: ['app.test'] } },
+      new FakeHands(),
+      new FakeBrain(toSave()),
+      person,
+    );
     expect(person.approvals).toHaveLength(0);
     expect(receipts.steps[1]!.gate).toBe('pre-approved');
   });
@@ -254,7 +307,12 @@ describe('lane loop: injection', () => {
   it('pauses on a page that instructs AI agents and stops if the person says so', async () => {
     const brain = new FakeBrain([{ action: { tool: 'finish', result: 'x' } }]);
     const person = new FakePerson({ injection: 'stop' });
-    const { outcome, receipts } = await run({ goal: 'read tips', startUrl: 'http://app.test/hostile' }, new FakeHands(), brain, person);
+    const { outcome, receipts } = await run(
+      { goal: 'read tips', startUrl: 'http://app.test/hostile' },
+      new FakeHands(),
+      brain,
+      person,
+    );
     expect(person.injections).toBe(1);
     expect(brain.seen).toHaveLength(0); // the model never saw the page
     expect(outcome.status).toBe('stopped');
@@ -264,7 +322,12 @@ describe('lane loop: injection', () => {
 
   it('continues with a warning when the person chooses to', async () => {
     const brain = new FakeBrain([{ action: { tool: 'finish', result: 'tips read' } }]);
-    const { outcome } = await run({ goal: 'read tips', startUrl: 'http://app.test/hostile' }, new FakeHands(), brain, new FakePerson({ injection: 'continue' }));
+    const { outcome } = await run(
+      { goal: 'read tips', startUrl: 'http://app.test/hostile' },
+      new FakeHands(),
+      brain,
+      new FakePerson({ injection: 'continue' }),
+    );
     expect(outcome.status).toBe('done');
     expect(brain.userText(0)).toContain('Warning: This page contains text that tries to instruct AI agents');
   });
@@ -328,7 +391,10 @@ describe('prompt: long field values', () => {
 
 describe('lane loop: scroll to an element', () => {
   it('succeeds when the element is in view, even if the page did not move', async () => {
-    const brain = new FakeBrain([{ action: { tool: 'scroll', mark: 1 } }, { action: { tool: 'finish', result: 'ok' } }]);
+    const brain = new FakeBrain([
+      { action: { tool: 'scroll', mark: 1 } },
+      { action: { tool: 'finish', result: 'ok' } },
+    ]);
     const { receipts } = await run({ goal: 'g' }, new FakeHands(), brain, new FakePerson());
     expect(receipts.steps[0]!.verdict).toEqual({ ok: true, note: '“+ New bill” is in view' });
   });
@@ -338,7 +404,16 @@ describe('lane loop: fill_cells', () => {
   it('enters a block of rows in one step and verifies every value', async () => {
     const hands = new FakeHands('/sheet');
     const brain = new FakeBrain([
-      { action: { tool: 'fill_cells', mark: 1, rows: [['Dec 2', 'Opening'], ['Dec 3', 'Async']] } },
+      {
+        action: {
+          tool: 'fill_cells',
+          mark: 1,
+          rows: [
+            ['Dec 2', 'Opening'],
+            ['Dec 3', 'Async'],
+          ],
+        },
+      },
       { action: { tool: 'finish', result: 'filled' } },
     ]);
     const { receipts } = await run({ goal: 'g' }, hands, brain, new FakePerson());
@@ -348,13 +423,26 @@ describe('lane loop: fill_cells', () => {
 
   it('accepts rows as tab-separated text', async () => {
     const { StepDecision } = await import('./actions.js');
-    expect(StepDecision.parse({ thinking: 't', action: { tool: 'fill_cells', mark: 1, rows: 'a\tb\nc\td\n' } }).action).toEqual({ tool: 'fill_cells', mark: 1, rows: [['a', 'b'], ['c', 'd']] });
+    expect(
+      StepDecision.parse({ thinking: 't', action: { tool: 'fill_cells', mark: 1, rows: 'a\tb\nc\td\n' } }).action,
+    ).toEqual({
+      tool: 'fill_cells',
+      mark: 1,
+      rows: [
+        ['a', 'b'],
+        ['c', 'd'],
+      ],
+    });
   });
 });
 
 describe('lane loop: redirect while running', () => {
   it('passes the new instruction to every later step', async () => {
-    const brain = new FakeBrain([{ action: { tool: 'read', what: 'fares' } }, { action: { tool: 'read', what: 'fares' } }, { action: { tool: 'finish', result: 'ok' } }]);
+    const brain = new FakeBrain([
+      { action: { tool: 'read', what: 'fares' } },
+      { action: { tool: 'read', what: 'fares' } },
+      { action: { tool: 'finish', result: 'ok' } },
+    ]);
     const person = new FakePerson();
     let sent = false;
     person.inbox = () => {
@@ -397,7 +485,10 @@ describe('lane loop: fill_form', () => {
 
   it('fills without submitting and checks every field', async () => {
     const hands = new FakeHands('/new');
-    const brain = new FakeBrain([{ action: { tool: 'fill_form', fields: [{ mark: 1, value: 'Kestrel' }] } }, { action: { tool: 'finish', result: 'ok' } }]);
+    const brain = new FakeBrain([
+      { action: { tool: 'fill_form', fields: [{ mark: 1, value: 'Kestrel' }] } },
+      { action: { tool: 'finish', result: 'ok' } },
+    ]);
     const { receipts } = await run({ goal: 'g' }, hands, brain, new FakePerson());
     expect(receipts.steps[0]!.verdict).toEqual({ ok: true, note: '1 fields filled' });
   });
@@ -405,7 +496,15 @@ describe('lane loop: fill_form', () => {
   it('refuses the whole form when one field is a password', async () => {
     const hands = new FakeHands('/signin');
     const brain = new FakeBrain([
-      { action: { tool: 'fill_form', fields: [{ mark: 1, value: 'ama@harbourline.example' }, { mark: 2, value: 'hunter2' }] } },
+      {
+        action: {
+          tool: 'fill_form',
+          fields: [
+            { mark: 1, value: 'ama@harbourline.example' },
+            { mark: 2, value: 'hunter2' },
+          ],
+        },
+      },
       { action: { tool: 'finish', result: 'x' } },
     ]);
     const { receipts } = await run({ goal: 'g' }, hands, brain, new FakePerson());
@@ -433,5 +532,93 @@ describe('lane loop: read limit', () => {
     const { receipts } = await run({ goal: 'g' }, new FakeHands(), brain, new FakePerson());
     expect(receipts.steps.map((s) => s.verdict.ok)).toEqual([true, true, false, true]);
     expect(receipts.steps[2]!.verdict.note).toMatch(/read this page twice already/);
+  });
+});
+
+describe('lane loop: real-site helpers', () => {
+  it('pauses at a bot check, brings the window forward and carries on after the person', async () => {
+    const hands = new FakeHands('/');
+    hands.extra = [{ blocker: { kind: 'captcha', text: 'Verify you are human' } }];
+    const brain = new FakeBrain([{ action: { tool: 'finish', result: 'done' } }]);
+    const person = new FakePerson({ answer: 'done' });
+    const { outcome: out } = await run({ goal: 'g' }, hands, brain, person);
+    expect(hands.calls).toContain('focus');
+    expect(person.questions[0]).toMatch(/check you're human/);
+    expect(out.status).toBe('done');
+  });
+
+  it('stops at a bot check when the person says stop, without the model ever acting', async () => {
+    const hands = new FakeHands('/');
+    hands.extra = [{ blocker: { kind: 'captcha', text: 'Verify you are human' } }];
+    const brain = new FakeBrain([{ action: { tool: 'click', mark: 1 } }]);
+    const { outcome: out } = await run({ goal: 'g' }, hands, brain, new FakePerson({ answer: 'stop' }));
+    expect(out.status).toBe('stopped');
+    expect(brain.seen).toHaveLength(0);
+  });
+
+  it('records what was cleared from the page in the receipt', async () => {
+    const hands = new FakeHands('/');
+    hands.extra = [{ tidied: ['Cookie banner: chose “Reject all”'] }];
+    const { receipts } = await run(
+      { goal: 'g' },
+      hands,
+      new FakeBrain([{ action: { tool: 'finish', result: 'ok' } }]),
+      new FakePerson(),
+    );
+    expect(receipts.events.find(([k]) => k === 'tidy')).toBeTruthy();
+  });
+
+  it('tells the lane about an unclear consent dialog and the site notes for its site only', async () => {
+    const hands = new FakeHands('/');
+    hands.extra = [{ consent: ['Accept all', 'Manage options'] }];
+    const brain = new FakeBrain([{ action: { tool: 'finish', result: 'ok' } }]);
+    await run(
+      {
+        goal: 'g',
+        siteNotes: [
+          { site: 'app.test', note: 'Use the search box' },
+          { site: 'other.example', note: 'Not for here' },
+          { site: 'app.test/elsewhere', note: 'Wrong path' },
+        ],
+      },
+      hands,
+      brain,
+      new FakePerson(),
+    );
+    const text = brain.userText(0);
+    expect(text).toContain('most privacy-preserving');
+    expect(text).toContain('Use the search box');
+    expect(text).not.toContain('Not for here');
+    expect(text).not.toContain('Wrong path');
+  });
+
+  it('writes to a sheet and checks it by reading the values back', async () => {
+    const hands = new FakeHands('/');
+    const brain = new FakeBrain([
+      { action: { tool: 'sheet_write', cell: 'b4', rows: [['Acme', '120']] } },
+      { action: { tool: 'finish', result: 'ok' } },
+    ]);
+    const { receipts } = await run({ goal: 'g' }, hands, brain, new FakePerson());
+    expect(hands.calls).toContain('sheet B4 1 rows');
+    expect(receipts.steps[0]!.verdict).toEqual({ ok: true, note: '2 value(s) read back' });
+  });
+
+  it('keeps a lane’s tip in the site notes', async () => {
+    const hands = new FakeHands('/');
+    const person = Object.assign(new FakePerson(), {
+      added: [] as string[],
+      addSiteNote: undefined as Supervisor['addSiteNote'],
+    });
+    person.addSiteNote = (host: string, note: string) => void person.added.push(`${host}: ${note}`);
+    await run(
+      { goal: 'g' },
+      hands,
+      new FakeBrain([
+        { action: { tool: 'note_site', note: 'Results load after pressing Enter' } },
+        { action: { tool: 'finish', result: 'ok' } },
+      ]),
+      person,
+    );
+    expect(person.added).toEqual(['app.test: Results load after pressing Enter']);
   });
 });

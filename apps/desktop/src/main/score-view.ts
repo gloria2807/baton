@@ -41,7 +41,10 @@ function frames(dir: string, runStart: number): Frame[] {
       ok: s.verdict.ok,
       note: s.verdict.note,
       seconds: Math.round(s.ms.total / 100) / 10,
-      image: s.screenshot && existsSync(join(dir, s.screenshot)) ? `data:image/jpeg;base64,${readFileSync(join(dir, s.screenshot)).toString('base64')}` : undefined,
+      image:
+        s.screenshot && existsSync(join(dir, s.screenshot))
+          ? `data:image/jpeg;base64,${readFileSync(join(dir, s.screenshot)).toString('base64')}`
+          : undefined,
     }));
 }
 
@@ -54,7 +57,13 @@ export function listScores() {
     .slice(0, 20)
     .map((f) => {
       const r = JSON.parse(readFileSync(join(dir, f), 'utf8'));
-      return { runId: r.runId, title: r.score.title, startedAt: r.startedAt, seconds: r.seconds, lanes: r.parts.length };
+      return {
+        runId: r.runId,
+        title: r.score.title,
+        startedAt: r.startedAt,
+        seconds: r.seconds,
+        lanes: r.parts.length,
+      };
     });
 }
 

@@ -11,8 +11,14 @@ const LABELS: Record<string, string> = {
 };
 
 async function render() {
-  const { token, port, status, statusDetail } = await chrome.storage.local.get(['token', 'port', 'status', 'statusDetail']);
-  if (token && !$<HTMLInputElement>('token').value) $<HTMLInputElement>('token').placeholder = 'Saved. Paste a new token to replace it.';
+  const { token, port, status, statusDetail } = await chrome.storage.local.get([
+    'token',
+    'port',
+    'status',
+    'statusDetail',
+  ]);
+  if (token && !$<HTMLInputElement>('token').value)
+    $<HTMLInputElement>('token').placeholder = 'Saved. Paste a new token to replace it.';
   $<HTMLInputElement>('port').value = String(port ?? 4317);
   const s = String(status ?? 'unpaired');
   $('status').textContent = LABELS[s] ?? s;

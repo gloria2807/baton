@@ -11,12 +11,7 @@
           "at": 150
         }
       ],
-      "expect": [
-        [
-          "this",
-          1
-        ]
-      ]
+      "expect": [["this", 1]]
     },
     {
       "name": "put this there",
@@ -33,14 +28,8 @@
         }
       ],
       "expect": [
-        [
-          "this",
-          1
-        ],
-        [
-          "there",
-          2
-        ]
+        ["this", 1],
+        ["there", 2]
       ]
     },
     {
@@ -58,14 +47,8 @@
         }
       ],
       "expect": [
-        [
-          "this",
-          1
-        ],
-        [
-          "there",
-          2
-        ]
+        ["this", 1],
+        ["there", 2]
       ]
     },
     {
@@ -83,14 +66,8 @@
         }
       ],
       "expect": [
-        [
-          "this",
-          1
-        ],
-        [
-          "her",
-          2
-        ]
+        ["this", 1],
+        ["her", 2]
       ]
     },
     {
@@ -108,18 +85,9 @@
         }
       ],
       "expect": [
-        [
-          "this",
-          1
-        ],
-        [
-          "it",
-          1
-        ],
-        [
-          "that",
-          2
-        ]
+        ["this", 1],
+        ["it", 1],
+        ["that", 2]
       ]
     },
     {
@@ -141,18 +109,9 @@
         }
       ],
       "expect": [
-        [
-          "this",
-          1
-        ],
-        [
-          "this",
-          2
-        ],
-        [
-          "this",
-          3
-        ]
+        ["this", 1],
+        ["this", 2],
+        ["this", 3]
       ]
     },
     {
@@ -169,12 +128,7 @@
           "at": 2200
         }
       ],
-      "expect": [
-        [
-          "this",
-          1
-        ]
-      ]
+      "expect": [["this", 1]]
     },
     {
       "name": "late pointing wins on timing",
@@ -190,24 +144,14 @@
           "at": 900
         }
       ],
-      "expect": [
-        [
-          "this",
-          2
-        ]
-      ]
+      "expect": [["this", 2]]
     },
     {
       "name": "no anchors",
       "transcript": "What is this?",
       "durationMs": 1500,
       "anchors": [],
-      "expect": [
-        [
-          "this",
-          null
-        ]
-      ]
+      "expect": [["this", null]]
     },
     {
       "name": "existential there is not pointing",
@@ -219,12 +163,7 @@
           "at": 1800
         }
       ],
-      "expect": [
-        [
-          "this",
-          1
-        ]
-      ]
+      "expect": [["this", 1]]
     },
     {
       "name": "time words are not pointing",
@@ -236,12 +175,7 @@
           "at": 300
         }
       ],
-      "expect": [
-        [
-          "this",
-          1
-        ]
-      ]
+      "expect": [["this", 1]]
     },
     {
       "name": "here and there",
@@ -258,14 +192,8 @@
         }
       ],
       "expect": [
-        [
-          "here",
-          1
-        ],
-        [
-          "there",
-          2
-        ]
+        ["here", 1],
+        ["there", 2]
       ]
     },
     {
@@ -279,12 +207,7 @@
           "at": 319
         }
       ],
-      "expect": [
-        [
-          "this",
-          1
-        ]
-      ]
+      "expect": [["this", 1]]
     },
     {
       "name": "recorded: pointing words lost in transcription",

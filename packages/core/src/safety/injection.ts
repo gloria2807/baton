@@ -19,15 +19,31 @@ const ADDRESSES_AI =
 
 // Attempts to replace the agent's goal or rules, or to slip past the person.
 const OVERRIDES: Array<[string, RegExp]> = [
-  ['tells the agent to ignore its instructions', /\b(ignore|disregard|forget|override|bypass)\b[^.]{0,40}\b(previous|prior|earlier|above|all|your|system|original)\b[^.]{0,20}\b(instructions?|prompts?|rules|directions|guidelines|goals?)\b/i],
-  ['claims to change the agent’s goal', /\byour (new|updated|real|actual|true) (goal|task|instructions?|objective|mission)\b/i],
-  ['poses as a system message', /\b(system (override|prompt|message|instruction)|developer (mode|message|instruction)|admin(istrator)? (override|instruction))\b/i],
-  ['claims the person pre-authorised something', /\b(pre-?authori[sz]ed|already (approved|authori[sz]ed|consented)|has authori[sz]ed you|you are authori[sz]ed)\b/i],
-  ['asks to act without the person', /\b(without (asking|telling|confirming|approval|permission)|do not (tell|inform|notify|ask|alert) the (user|person|human)|don't (tell|ask) the (user|person))\b/i],
+  [
+    'tells the agent to ignore its instructions',
+    /\b(ignore|disregard|forget|override|bypass)\b[^.]{0,40}\b(previous|prior|earlier|above|all|your|system|original)\b[^.]{0,20}\b(instructions?|prompts?|rules|directions|guidelines|goals?)\b/i,
+  ],
+  [
+    'claims to change the agent’s goal',
+    /\byour (new|updated|real|actual|true) (goal|task|instructions?|objective|mission)\b/i,
+  ],
+  [
+    'poses as a system message',
+    /\b(system (override|prompt|message|instruction)|developer (mode|message|instruction)|admin(istrator)? (override|instruction))\b/i,
+  ],
+  [
+    'claims the person pre-authorised something',
+    /\b(pre-?authori[sz]ed|already (approved|authori[sz]ed|consented)|has authori[sz]ed you|you are authori[sz]ed)\b/i,
+  ],
+  [
+    'asks to act without the person',
+    /\b(without (asking|telling|confirming|approval|permission)|do not (tell|inform|notify|ask|alert) the (user|person|human)|don't (tell|ask) the (user|person))\b/i,
+  ],
 ];
 
 // What an injected instruction usually wants done.
-const IMPERATIVE = /\b(forward|send|email|delete|remove|transfer|approve|enter|type|fill|open|navigate|go to|visit|click|pay|purchase|buy|reveal|share|copy|upload|download|post|disclose|output|print|respond with|say)\b/i;
+const IMPERATIVE =
+  /\b(forward|send|email|delete|remove|transfer|approve|enter|type|fill|open|navigate|go to|visit|click|pay|purchase|buy|reveal|share|copy|upload|download|post|disclose|output|print|respond with|say)\b/i;
 
 function chunks(text: string): string[] {
   // Sentence-ish pieces, so one long article does not combine unrelated phrases.
@@ -46,7 +62,12 @@ export function detectInjection(sources: PageTextSource[]): InjectionFinding[] {
       const why: string[] = [];
       for (const [label, re] of OVERRIDES) if (re.test(piece)) why.push(label);
       const addressed = ADDRESSES_AI.test(piece);
-      if (addressed && IMPERATIVE.test(piece) && /\b(you|your|must|should|now|immediately)\b|^[^a-z]*\b(ai|assistant|agent|model|note)\b[^:]{0,40}:/i.test(piece)) why.push('gives orders to an AI agent');
+      if (
+        addressed &&
+        IMPERATIVE.test(piece) &&
+        /\b(you|your|must|should|now|immediately)\b|^[^a-z]*\b(ai|assistant|agent|model|note)\b[^:]{0,40}:/i.test(piece)
+      )
+        why.push('gives orders to an AI agent');
       // An override phrase alone is suspicious; a direct order to an AI is enough on its own too.
       if (why.length === 0) continue;
       // The order usually follows the "ignore your instructions" sentence; show both.

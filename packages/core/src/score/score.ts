@@ -37,7 +37,8 @@ export function checkScore(s: { parts: Array<Pick<Part, 'id' | 'dependsOn'>> }, 
       if (!ids.includes(d)) ctx.addIssue({ code: 'custom', message: `part "${p.id}" depends on unknown part "${d}"` });
       if (d === p.id) ctx.addIssue({ code: 'custom', message: `part "${p.id}" depends on itself` });
     }
-  if (!dup && levels(s.parts) === null) ctx.addIssue({ code: 'custom', message: 'the parts depend on each other in a circle' });
+  if (!dup && levels(s.parts) === null)
+    ctx.addIssue({ code: 'custom', message: 'the parts depend on each other in a circle' });
 }
 
 export const Score = z.object(ScoreFields).superRefine(checkScore);

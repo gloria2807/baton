@@ -44,7 +44,8 @@ interface Listed {
 }
 
 const fmt = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+const when = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
 function Staff({ rec, onPick }: { rec: ScoreRecord; onPick: (f: Frame) => void }) {
   const total = Math.max(1, rec.seconds * 1000);
@@ -81,7 +82,12 @@ function Staff({ rec, onPick }: { rec: ScoreRecord; onPick: (f: Frame) => void }
                   onClick={() => onPick(f)}
                 />
               ))}
-              {last && <span className={`barline ${l.result?.status === 'done' ? '' : 'open'}`} style={{ left: `${(last.atMs / total) * 100}%` }} />}
+              {last && (
+                <span
+                  className={`barline ${l.result?.status === 'done' ? '' : 'open'}`}
+                  style={{ left: `${(last.atMs / total) * 100}%` }}
+                />
+              )}
             </div>
           </div>
         );
@@ -129,13 +135,15 @@ export function ScoreView() {
             <h1>{rec.score.title}</h1>
             <p className="lead">{rec.speech ?? rec.headline}</p>
             <p className="totals">
-              {rec.lanes.length} lanes, {steps} steps, {fmt(rec.seconds)} with Baton. By hand this is about {rec.manualMinutes} minutes.
+              {rec.lanes.length} lanes, {steps} steps, {fmt(rec.seconds)} with Baton. By hand this is about{' '}
+              {rec.manualMinutes} minutes.
             </p>
           </header>
 
           <Staff rec={rec} onPick={setZoom} />
           <p className="legend">
-            <span className="note-key" /> step <span className="note-key yes" /> approved by you <span className="note-key miss" /> check failed, tried again <span className="bar-key" /> finished
+            <span className="note-key" /> step <span className="note-key yes" /> approved by you{' '}
+            <span className="note-key miss" /> check failed, tried again <span className="bar-key" /> finished
           </p>
 
           {rec.lanes.map((l) => (
@@ -174,7 +182,8 @@ export function ScoreView() {
             </b>
             <p>{zoom.reason}</p>
             <p className={zoom.ok ? 'ok' : 'miss'}>
-              {zoom.ok ? 'Checked' : 'Check failed'}: {zoom.note} · {zoom.seconds} s{zoom.gate !== 'allowed' ? ` · ${zoom.gate}` : ''}
+              {zoom.ok ? 'Checked' : 'Check failed'}: {zoom.note} · {zoom.seconds} s
+              {zoom.gate !== 'allowed' ? ` · ${zoom.gate}` : ''}
             </p>
           </div>
         </div>

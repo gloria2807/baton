@@ -22,7 +22,6 @@ export const Bounds = z.object({
 });
 export type Bounds = z.infer<typeof Bounds>;
 
-
 // One numbered interactive element as the lane sees it.
 export const Element = z.object({
   mark: z.number().int().positive(),
@@ -50,18 +49,50 @@ const target = { mark: z.number().int().positive().optional(), x: z.number().opt
 
 export const Command = z.discriminatedUnion('op', [
   z.object({ op: z.literal('ping') }),
-  z.object({ op: z.literal('openLane'), laneId: LaneId, url: z.string().url(), color: Color, title: z.string().max(80), bounds: Bounds.optional() }),
+  z.object({
+    op: z.literal('openLane'),
+    laneId: LaneId,
+    url: z.string().url(),
+    color: Color,
+    title: z.string().max(80),
+    bounds: Bounds.optional(),
+  }),
   z.object({ op: z.literal('closeLane'), laneId: LaneId }),
   z.object({ op: z.literal('navigate'), laneId: LaneId, url: z.string().url() }),
-  z.object({ op: z.literal('look'), laneId: LaneId, maxWidth: z.number().int().min(320).max(2560).default(1280), screenshot: z.boolean().default(true) }),
+  z.object({
+    op: z.literal('look'),
+    laneId: LaneId,
+    maxWidth: z.number().int().min(320).max(2560).default(1280),
+    screenshot: z.boolean().default(true),
+  }),
   z.object({ op: z.literal('moveCursor'), laneId: LaneId, ...target }),
   z.object({ op: z.literal('click'), laneId: LaneId, ...target }),
-  z.object({ op: z.literal('type'), laneId: LaneId, mark: z.number().int().positive(), text: z.string().max(5000), submit: z.boolean().default(false) }),
-  z.object({ op: z.literal('key'), laneId: LaneId, key: z.enum(['Enter', 'Tab', 'Escape', 'Backspace', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp']) }),
-  z.object({ op: z.literal('scroll'), laneId: LaneId, dy: z.number().int().default(0), mark: z.number().int().positive().optional() }),
+  z.object({
+    op: z.literal('type'),
+    laneId: LaneId,
+    mark: z.number().int().positive(),
+    text: z.string().max(5000),
+    submit: z.boolean().default(false),
+  }),
+  z.object({
+    op: z.literal('key'),
+    laneId: LaneId,
+    key: z.enum(['Enter', 'Tab', 'Escape', 'Backspace', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp']),
+  }),
+  z.object({
+    op: z.literal('scroll'),
+    laneId: LaneId,
+    dy: z.number().int().default(0),
+    mark: z.number().int().positive().optional(),
+  }),
   z.object({ op: z.literal('select'), laneId: LaneId, mark: z.number().int().positive(), option: z.string().max(200) }),
   z.object({ op: z.literal('back'), laneId: LaneId }),
-  z.object({ op: z.literal('fillCells'), laneId: LaneId, mark: z.number().int().positive(), rows: z.array(z.array(z.string().max(500)).max(20)).max(60) }),
+  z.object({
+    op: z.literal('fillCells'),
+    laneId: LaneId,
+    mark: z.number().int().positive(),
+    rows: z.array(z.array(z.string().max(500)).max(20)).max(60),
+  }),
   // A cue starts or ends: content scripts in every tab watch where the pointer rests.
   z.object({ op: z.literal('cueStart'), cueId: z.string().max(64) }),
   z.object({ op: z.literal('cueEnd'), cueId: z.string().max(64), keep: z.boolean() }),
@@ -73,6 +104,18 @@ export const Command = z.discriminatedUnion('op', [
   // Development: pick up a rebuilt extension without a trip to chrome://extensions.
   z.object({ op: z.literal('reloadExtension') }),
   z.object({ op: z.literal('setThinking'), laneId: LaneId, text: z.string().max(140) }),
+  // Bring a lane's window to the front, for something only the person can do there.
+  z.object({ op: z.literal('focusLane'), laneId: LaneId }),
+  // Google Sheets and Docs draw on a canvas: move with the Name Box and the keyboard, read through the file's own export.
+  z.object({
+    op: z.literal('sheetWrite'),
+    laneId: LaneId,
+    cell: z.string().max(20),
+    rows: z.array(z.array(z.string().max(500)).max(26)).max(60),
+  }),
+  z.object({ op: z.literal('sheetRead'), laneId: LaneId, range: z.string().max(30).optional() }),
+  z.object({ op: z.literal('docWrite'), laneId: LaneId, text: z.string().max(8000) }),
+  z.object({ op: z.literal('docRead'), laneId: LaneId }),
 ]);
 export type Command = z.infer<typeof Command>;
 export type CommandInput = z.input<typeof Command>;
@@ -88,6 +131,14 @@ export const LookResult = z.object({
   text: z.string(),
   // Text a person cannot see (HTML comments, attributes, invisible text), for the injection detector.
   hidden: z.array(z.object({ source: z.enum(['hidden', 'comment', 'attribute']), text: z.string() })).default([]),
+  // What Baton cleared out of the way before this look (consent banners, pop-ups), for the receipt.
+  tidied: z.array(z.string()).default([]),
+  // Something only the person can get past, such as a "check you're human" page. Never solved by Baton.
+  blocker: z.object({ kind: z.literal('captcha'), text: z.string().max(300) }).optional(),
+  // A consent dialog whose most private choice Baton could not tell: its buttons, for the lane to pick from.
+  consent: z.array(z.string().max(120)).max(12).optional(),
+  // Editors that draw on a canvas, whose contents are not in the element list.
+  app: z.enum(['sheets', 'docs']).optional(),
 });
 export type LookResult = z.infer<typeof LookResult>;
 
@@ -109,7 +160,12 @@ export const LaneEvent = z.discriminatedUnion('kind', [
 export type LaneEvent = z.infer<typeof LaneEvent>;
 
 export const FromExtension = z.union([
-  z.object({ type: z.literal('hello'), token: z.string().min(16).max(256), version: z.number(), extensionVersion: z.string() }),
+  z.object({
+    type: z.literal('hello'),
+    token: z.string().min(16).max(256),
+    version: z.number(),
+    extensionVersion: z.string(),
+  }),
   z.object({ type: z.literal('result'), id: z.number().int(), ok: z.literal(true), data: z.unknown() }),
   z.object({ type: z.literal('result'), id: z.number().int(), ok: z.literal(false), error: z.string() }),
   z.object({ type: z.literal('event'), event: LaneEvent }),

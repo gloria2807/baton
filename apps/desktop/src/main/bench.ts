@@ -70,7 +70,11 @@ export async function runBench(bridge: BridgeServer, model: Model, conductor: Co
         laneId: task.id,
         name: `Bench ${i + 1}/${tasks.length}`,
         color: LANE_COLORS[i % LANE_COLORS.length]!,
-        spec: { goal: task.goal, startUrl: task.startUrl, preApproved: task.preApprove ? { categories: task.preApprove, hosts: [host] } : undefined },
+        spec: {
+          goal: task.goal,
+          startUrl: task.startUrl,
+          preApproved: task.preApprove ? { categories: task.preApprove, hosts: [host] } : undefined,
+        },
         bounds: conductor.laneBounds(),
       },
     );
@@ -103,7 +107,10 @@ export async function runBench(bridge: BridgeServer, model: Model, conductor: Co
   const passed = rows.filter((r) => r.ok).length;
   const dir = join(repoRoot, 'bench', 'runs');
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${runId}.json`), JSON.stringify({ runId, model: 'meta-models/muse-spark-open-1026', rows }, null, 2));
+  writeFileSync(
+    join(dir, `${runId}.json`),
+    JSON.stringify({ runId, model: 'meta-models/muse-spark-open-1026', rows }, null, 2),
+  );
   const table = [
     `# Baton benchmark — single lane (${runId})`,
     '',
@@ -111,7 +118,10 @@ export async function runBench(bridge: BridgeServer, model: Model, conductor: Co
     '',
     '| Task | Result | Steps | Time (s) | By hand (s) | Cost (USD) | Check |',
     '|---|---|---|---|---|---|---|',
-    ...rows.map((r) => `| ${r.id} | ${r.ok ? 'pass' : '**fail**'} | ${r.steps} | ${r.seconds} | ${r.manualSeconds} | ${r.costUsd.toFixed(4)} | ${r.detail.replace(/\|/g, '/')} |`),
+    ...rows.map(
+      (r) =>
+        `| ${r.id} | ${r.ok ? 'pass' : '**fail**'} | ${r.steps} | ${r.seconds} | ${r.manualSeconds} | ${r.costUsd.toFixed(4)} | ${r.detail.replace(/\|/g, '/')} |`,
+    ),
     '',
     `Totals: ${rows.reduce((a, r) => a + r.steps, 0)} steps, ${rows.reduce((a, r) => a + r.seconds, 0).toFixed(1)} s, $${rows.reduce((a, r) => a + r.costUsd, 0).toFixed(4)}.`,
     '',

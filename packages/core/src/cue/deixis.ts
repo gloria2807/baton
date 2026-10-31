@@ -25,7 +25,11 @@ function pointing(words: string[], i: number): boolean {
   if (w === 'there' && /^(is|are|was|were|be|been|isn't|aren't)$/.test(prev)) return false;
   if (w === 'there' && /^(is|are|was|were)$/.test(next) && i === 0) return false;
   if (w === 'that' && /^(so|such|think|say|said|know|sure|hope|mean|means|than|now)$/.test(prev)) return false;
-  if ((w === 'this' || w === 'that') && /^(morning|afternoon|evening|week|weekend|month|year|time|way|much|many)$/.test(next)) return false;
+  if (
+    (w === 'this' || w === 'that') &&
+    /^(morning|afternoon|evening|week|weekend|month|year|time|way|much|many)$/.test(next)
+  )
+    return false;
   if (w === 'one' && !/^(this|that|the|which|another|first|second|third|cheaper|other)$/.test(prev)) return false;
   if (w === 'one' && /^(this|that)$/.test(prev)) return false; // "this one" is a single reference
   return true;
@@ -96,7 +100,12 @@ export function mapDeixis(transcript: string, durationMs: number, anchors: Timed
   const enough = sorted.length >= tokens.length;
   const pointers = enough ? tokens : tokens.filter((t) => t.strong);
   const est = pointers.map((t) => estimate(t.index, transcript.length, durationMs));
-  const picks = pointers.length === sorted.length ? pointers.map((_, i) => i) : pointers.length ? assign(pointers, sorted, est) : [];
+  const picks =
+    pointers.length === sorted.length
+      ? pointers.map((_, i) => i)
+      : pointers.length
+        ? assign(pointers, sorted, est)
+        : [];
   const chosen = new Map(pointers.map((t, i) => [t.index, sorted[picks[i]!]!.n]));
 
   let last: number | null = null;

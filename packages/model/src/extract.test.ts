@@ -22,7 +22,7 @@ describe('extractJson', () => {
 describe('native tool-call replies', () => {
   it('maps the channel format onto a lane decision', () => {
     const raw =
-      "<|start|>assistant to=commentary<|message|>I noticed the vendor field isn't visible, so I'll re-examine the form.<|eom|><|start|>assistant to=scroll<|message|>{\"direction\":\"up\"}<|eot|>";
+      '<|start|>assistant to=commentary<|message|>I noticed the vendor field isn\'t visible, so I\'ll re-examine the form.<|eom|><|start|>assistant to=scroll<|message|>{"direction":"up"}<|eot|>';
     expect(extractJson(raw)).toEqual({
       thinking: "I noticed the vendor field isn't visible, so I'll re-examine the form.",
       action: { tool: 'scroll', direction: 'up' },
@@ -31,7 +31,11 @@ describe('native tool-call replies', () => {
   });
 
   it('handles a call with no commentary and a functions. prefix', () => {
-    expect(fromNativeToolCall('<|start|>assistant to=functions.click<|message|>{"mark": 5}<|call|>')).toEqual({ thinking: '', action: { tool: 'click', mark: 5 }, reason: '' });
+    expect(fromNativeToolCall('<|start|>assistant to=functions.click<|message|>{"mark": 5}<|call|>')).toEqual({
+      thinking: '',
+      action: { tool: 'click', mark: 5 },
+      reason: '',
+    });
   });
 
   it('ignores ordinary JSON and broken calls', () => {
@@ -43,7 +47,12 @@ describe('native tool-call replies', () => {
 
 describe('native wrapper around a whole decision', () => {
   it('keeps the inner decision', () => {
-    const raw = '<|start|>assistant to=commentary<|message|>Opening the form.<|eom|><|start|>assistant to=open_url<|message|>{"thinking": "Open new bill form", "action": {"tool": "open_url", "url": "http://localhost:4401/bills/new"}, "reason": "r"}<|eot|>';
-    expect(extractJson(raw)).toEqual({ thinking: 'Open new bill form', action: { tool: 'open_url', url: 'http://localhost:4401/bills/new' }, reason: 'r' });
+    const raw =
+      '<|start|>assistant to=commentary<|message|>Opening the form.<|eom|><|start|>assistant to=open_url<|message|>{"thinking": "Open new bill form", "action": {"tool": "open_url", "url": "http://localhost:4401/bills/new"}, "reason": "r"}<|eot|>';
+    expect(extractJson(raw)).toEqual({
+      thinking: 'Open new bill form',
+      action: { tool: 'open_url', url: 'http://localhost:4401/bills/new' },
+      reason: 'r',
+    });
   });
 });

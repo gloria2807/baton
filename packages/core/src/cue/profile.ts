@@ -25,7 +25,9 @@ export const PROFILE_LABELS: Record<keyof Profile, string> = {
 };
 
 export function profileLines(p: Profile): string {
-  const lines = (Object.keys(PROFILE_LABELS) as Array<keyof Profile>).filter((k) => p[k].trim()).map((k) => `- ${PROFILE_LABELS[k]}: ${p[k].trim()}`);
+  const lines = (Object.keys(PROFILE_LABELS) as Array<keyof Profile>)
+    .filter((k) => p[k].trim())
+    .map((k) => `- ${PROFILE_LABELS[k]}: ${p[k].trim()}`);
   return lines.length ? lines.join('\n') : '(empty)';
 }
 
@@ -33,10 +35,17 @@ export function profileLines(p: Profile): string {
 // or email uses the profile instead of stopping to ask or, worse, making one up. The planner is
 // asked to copy them into goals; this makes it certain.
 export function goalWithProfile(goal: string, p: Profile): string {
-  const facts = [p.name && `name ${p.name}`, p.workEmail && `email ${p.workEmail}`, p.homeCity && `home city ${p.homeCity}`, p.homeAirport && `home airport ${p.homeAirport}`]
+  const facts = [
+    p.name && `name ${p.name}`,
+    p.workEmail && `email ${p.workEmail}`,
+    p.homeCity && `home city ${p.homeCity}`,
+    p.homeAirport && `home airport ${p.homeAirport}`,
+  ]
     .filter(Boolean)
     .join(', ');
-  return facts ? `${goal}
+  return facts
+    ? `${goal}
 
-The person's own details, to use only where a form asks for them: ${facts}.` : goal;
+The person's own details, to use only where a form asks for them: ${facts}.`
+    : goal;
 }

@@ -4,6 +4,7 @@ import { CardView, Lanes, type Card, type LaneView } from './Cards';
 import { ProfileForm } from './Profile';
 import { CameraPanel, CameraSwitch } from './Camera';
 import { Recorder } from './recorder';
+import { Captions } from './captions';
 import { hush, speak } from './speech';
 import { sounds } from './sounds';
 
@@ -11,7 +12,7 @@ type Phase =
   | { kind: 'idle' }
   | { kind: 'opening' }
   | { kind: 'listening'; since: number }
-  | { kind: 'understanding'; seconds: number }
+  | { kind: 'understanding'; seconds: number; caption: string }
   | { kind: 'heard'; transcript: string; intent: string; ms: number; seconds: number }
   | { kind: 'notice'; text: string; tone: 'ok' | 'warn' | 'info' };
 
@@ -94,6 +95,9 @@ export function Podium() {
   const [talkKeys, setTalkKeys] = useState<Array<{ id: string; label: string }>>([]);
   const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0));
   const [lanes, setLanes] = useState<LaneView[]>([]);
+  const [caption, setCaption] = useState('');
+  const [thinking, setThinking] = useState('');
+  const captions = useRef(new Captions());
   const [cards, setCards] = useState<Card[]>([]);
   const [anchors, setAnchors] = useState<Array<{ n: number; label: string; source: string }>>([]);
   const [profile, setProfile] = useState<Record<string, string> | null>(null);
@@ -104,6 +108,12 @@ export function Podium() {
   useEffect(() => {
     // Build the audio graph now so the talk key only has to open the microphone.
     void recorder.current.warm().catch(() => undefined);
+    // Load the caption model now, so the first words appear while the person is still speaking.
+    const t0 = performance.now();
+    void captions.current.warm()?.then(
+      () => window.baton.logStatus(`caption model ready in ${Math.round(performance.now() - t0)} ms`),
+      (e: Error) => window.baton.logStatus(`caption model failed: ${e.message}`),
+    );
     void window.baton.init().then((s) => {
       setExtension(s.extension);
       setToken(s.token);
@@ -121,9 +131,15 @@ export function Podium() {
         setPhase({ kind: 'idle' });
       }),
       window.baton.onNotice((t) => setPhase({ kind: 'notice', text: String(t), tone: toneOf(String(t)) })),
+      window.baton.onThinking((t) => setThinking(String(t))),
+      window.baton.onSound((s) => (s === 'plan' ? sounds.plan() : undefined)),
       window.baton.onLanes((l) => {
         const next = l as LaneView[];
         setLanes((prev) => {
+          // Each lane that appears gets a soft note, a little apart, as the plan becomes lanes.
+          next
+            .filter((n) => !prev.some((p) => p.laneId === n.laneId))
+            .forEach((_, i) => setTimeout(() => sounds.laneStart(), i * 90));
           if (!prev.length && next.length) sounds.lanesStart();
           else if (next.some((n) => n.state === 'done' && prev.find((p) => p.laneId === n.laneId)?.state !== 'done'))
             sounds.laneDone();
@@ -174,6 +190,19 @@ export function Podium() {
     return () => ro.disconnect();
   }, []);
 
+  // Live captions while listening: the local recogniser goes over the audio so far about once a second.
+  useEffect(() => {
+    if (phase.kind !== 'listening') return;
+    const t = setInterval(() => {
+      const { samples, sampleRate } = recorder.current.snapshot();
+      void captions.current.caption(samples, sampleRate).then(
+        (text) => text && setCaption(text),
+        () => undefined,
+      );
+    }, 900);
+    return () => clearInterval(t);
+  }, [phase.kind]);
+
   // Live waveform while listening.
   useEffect(() => {
     if (phase.kind !== 'listening') return;
@@ -189,6 +218,9 @@ export function Podium() {
   async function begin() {
     hush(); // pressing the key while Baton talks stops it
     setLevels(Array(BARS).fill(0));
+    setCaption('');
+    setThinking('');
+    captions.current.updates = 0;
     setPhase({ kind: 'opening' });
     try {
       // The chime means "speak now": it plays only once the microphone is really capturing,
@@ -203,9 +235,11 @@ export function Podium() {
   }
 
   async function end() {
-    // Acknowledge at once; the model works after this.
-    sounds.release();
+    // Acknowledge at once (a tick, "Heard you", the waveform frozen); the model works after this.
+    sounds.tick();
+    setPhase({ kind: 'understanding', seconds: 0, caption });
     const rec = await recorder.current.stop();
+    window.baton.captionStats(captions.current.updates);
     window.baton.reportMic(rec.openMs, rec.seconds, rec.timing);
     seconds.current = rec.seconds;
     if (rec.seconds < 0.25 || rms(rec.samples) < 0.004) {
@@ -216,7 +250,16 @@ export function Podium() {
       });
       return;
     }
-    setPhase({ kind: 'understanding', seconds: rec.seconds });
+    setPhase((p) => ({
+      kind: 'understanding',
+      seconds: rec.seconds,
+      caption: p.kind === 'understanding' ? p.caption : '',
+    }));
+    // A last caption of the whole recording, while Muse Spark Open listens to the same audio.
+    void captions.current.caption(rec.samples, rec.sampleRate).then(
+      (text) => text && setCaption(text),
+      () => undefined,
+    );
     await window.baton.sendCue(cueWav(rec.samples, rec.sampleRate), rec.seconds);
   }
 
@@ -265,20 +308,28 @@ export function Podium() {
                   <span key={i} style={{ transform: `scaleY(${0.12 + l * 0.88})` }} />
                 ))}
               </div>
-              <div className="main">Listening…</div>
+              <div className="main caption">{caption || 'Listening…'}</div>
             </div>
           )}
           {phase.kind === 'understanding' && (
             <>
-              <div className="main shimmer">Understanding…</div>
-              <div className="sub">{phase.seconds.toFixed(1)} s recorded</div>
+              <div className="listening heard-you">
+                <div className="wave frozen">
+                  {levels.map((l, i) => (
+                    <span key={i} style={{ transform: `scaleY(${0.12 + l * 0.88})` }} />
+                  ))}
+                </div>
+                <div className="main caption">{caption ? `“${caption}”` : 'Heard you'}</div>
+              </div>
+              <div className="sub thinking-line">{thinking || 'Muse Spark Open is listening to what you said…'}</div>
             </>
           )}
           {phase.kind === 'heard' && (
             <>
               <div className="main transcript">“{phase.transcript || '…'}”</div>
-              <div className="sub">
-                {phase.intent} · understood in {(phase.ms / 1000).toFixed(1)} s
+              <div className="sub thinking-line">
+                {thinking || (phase.intent ? `${phase.intent} · ` : '')}
+                {!thinking && `heard in ${(phase.ms / 1000).toFixed(1)} s`}
               </div>
             </>
           )}

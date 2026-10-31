@@ -133,6 +133,8 @@ export interface LaneLaunch {
   // A redirected lane carries on in the window it already has, from the page it is on.
   reuseWindow?: boolean;
   attempt?: number;
+  // Called the moment the lane's window is open and its loop begins (voice timing).
+  onOpen?: () => void;
 }
 
 export async function launchLane(
@@ -157,6 +159,7 @@ export async function launchLane(
       { op: 'openLane', laneId: l.laneId, url: l.spec.startUrl, color: l.color, title: l.name, bounds: l.bounds },
       30000,
     );
+  l.onOpen?.();
   const hands = new BridgeHands(bridge, l.laneId);
   let outcome: LaneOutcome;
   try {

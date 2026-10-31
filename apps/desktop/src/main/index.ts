@@ -15,7 +15,7 @@ import {
   session,
   Tray,
 } from 'electron';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LookResult, RecordedStep, TALK_KEYS, isTalkKeyId, type Anchor, type TalkKeyId } from '@baton/core';
 import { Governor, Model, type SpendState } from '@baton/model';
@@ -24,6 +24,7 @@ import { iconPng } from '../../../../scripts/icon.mjs';
 import { runBench } from './bench';
 import { runMultiBench } from './bench-multi';
 import { runRealBench } from './bench-real';
+import { replayVoice } from './voice-replay';
 import { BridgeServer } from './bridge-server';
 import { Conductor, type CardAnswer } from './conductor';
 import { listNotes, removeNote } from './site-notes';
@@ -62,7 +63,10 @@ let pinSessionTimer: ReturnType<typeof setTimeout> | null = null;
 let profile = loadProfile();
 // The cue being spoken now, and the one whose audio is on its way to the model.
 let cueSession: CueSession | null = null;
-let spokenCue: { id: string; heldMs: number; anchors: Promise<Anchor[]> } | null = null;
+let spokenCue: { id: string; heldMs: number; anchors: Promise<Anchor[]>; releasedAt: number } | null = null;
+// Voice timing for the live gate: when the reasoning line and the captions updated during each wait.
+let thinkingAt: number[] = [];
+let captionUpdates = 0;
 const token = loadPairingToken();
 const settings = loadSettings();
 const ptt = new PushToTalk(settings.talkKey);
@@ -82,6 +86,7 @@ function setTalkKey(key: TalkKeyId) {
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
 function send(channel: string, payload: unknown) {
+  if (channel === 'thinking') thinkingAt.push(Date.now());
   podium?.webContents.send(channel, payload);
 }
 
@@ -182,6 +187,50 @@ async function handleCue(wav: Uint8Array, seconds: number) {
     send('cue', { phase: 'error', error: 'No Baseten key: recording saved, not transcribed.' } satisfies CueUpdate);
     return;
   }
+  // The fast pipeline (default): one streamed call hears, understands and plans. BATON_VOICE=classic
+  // keeps the earlier two-call pipeline, for comparison.
+  if (process.env.BATON_VOICE !== 'classic') {
+    const cue = spokenCue;
+    spokenCue = null;
+    const released = cue?.releasedAt ?? Date.now();
+    const anchors = cue ? await cue.anchors : [];
+    const id = cue?.id ?? `cue-${Date.now().toString(36)}`;
+    const marks: Record<string, number> = {};
+    let transcript = '';
+    let logged = false;
+    thinkingAt = [];
+    const record = (end: string) => {
+      if (logged) return;
+      logged = true;
+      conductor.timing = null;
+      const endAt = released + (marks[end] ?? Date.now() - released);
+      const updates = thinkingAt.filter((t) => t >= released && t <= endAt).length;
+      const row = {
+        id,
+        at: new Date(released).toISOString(),
+        transcript,
+        seconds,
+        ...marks,
+        reasoningUpdates: updates,
+        captionUpdates,
+      };
+      mkdirSync(outDir('voice'), { recursive: true });
+      appendFileSync(join(outDir('voice'), 'live.jsonl'), JSON.stringify(row) + '\n');
+      log(
+        `VOICE_LIVE “${transcript}” heard ${marks.heard ?? '-'} planned ${marks.planned ?? '-'} first lane ${marks['lane-open'] ?? '-'} answered ${marks.answered ?? '-'} ms; reasoning updates ${updates}; caption updates ${captionUpdates}`,
+      );
+    };
+    conductor.timing = (mark) => {
+      marks[mark] ??= Date.now() - released;
+      if (mark === 'lane-open' || mark === 'answered') record(mark);
+    };
+    await conductor.fromAudio({ id, wav, anchors, heldMs: cue?.heldMs ?? seconds * 1000 }, (t) => {
+      transcript = t;
+      send('cue', { phase: 'heard', transcript: t, intent: '', ms: Date.now() - released, file } satisfies CueUpdate);
+    });
+    record('planned');
+    return;
+  }
   try {
     const r = await model.transcribeCue(wav);
     log(`cue heard in ${Math.round(r.ms)} ms`);
@@ -222,8 +271,10 @@ app.whenReady().then(async () => {
   protocol.handle('baton-asset', (req) => {
     const u = new URL(req.url);
     const rel = decodeURIComponent(u.pathname).replace(/^\/+/, '');
-    if (u.host !== 'hand' || rel.includes('..')) return new Response('not found', { status: 404 });
-    return net.fetch(pathToFileURL(join(__dirname, 'hand', rel)).toString());
+    // hand: MediaPipe and its model; models: the caption model; ort: ONNX Runtime's WebAssembly.
+    if (!['hand', 'models', 'ort'].includes(u.host) || rel.includes('..'))
+      return new Response('not found', { status: 404 });
+    return net.fetch(pathToFileURL(join(__dirname, u.host, rel)).toString());
   });
   loadEnv();
   try {
@@ -311,6 +362,10 @@ app.whenReady().then(async () => {
   registerScoreView();
   ipcMain.handle('score:open', (_e, runId: unknown) => openScore(typeof runId === 'string' ? runId : undefined));
   ipcMain.handle('pairing:copy', () => clipboard.writeText(token));
+  ipcMain.on('renderer:status', (_e, line: unknown) => log(`podium: ${String(line).slice(0, 200)}`));
+  ipcMain.on('caption:stats', (_e, updates: unknown) => {
+    captionUpdates = typeof updates === 'number' ? updates : 0;
+  });
   ipcMain.on('mic:timing', (_e, openMs: unknown, seconds: unknown, timing: unknown) => {
     if (typeof seconds === 'number')
       log(
@@ -328,6 +383,8 @@ app.whenReady().then(async () => {
     e: { type: 'start' } | { type: 'commit'; heldMs: number } | { type: 'cancel'; reason: 'other-key' | 'focus-lost' },
   ) => {
     send('ptt', e);
+    // Open the connection to Baseten while the person speaks, so nothing waits for it after release.
+    if (e.type === 'start') model?.warm();
     // Pins dropped by the hand just before talking belong to this cue.
     if (e.type === 'start' && cueSession && pinSessionTimer) {
       clearTimeout(pinSessionTimer);
@@ -345,7 +402,7 @@ app.whenReady().then(async () => {
     } else if (cueSession) {
       const s = cueSession;
       cueSession = null;
-      if (e.type === 'commit') spokenCue = { id: s.id, heldMs: e.heldMs, anchors: s.end(true) };
+      if (e.type === 'commit') spokenCue = { id: s.id, heldMs: e.heldMs, anchors: s.end(true), releasedAt: Date.now() };
       else void s.end(false).then(() => send('anchors', []));
     }
   };
@@ -468,6 +525,17 @@ function handleArgs(argv: string[]) {
         `PROBE field “${field.name}” (autocomplete hints: ${field.hints ?? '-'}) type → ${JSON.stringify(typed)}; now holds “${after?.value ?? '?'}”`,
       );
     }, 'PROBE');
+
+  // --voice-replay=classic|fast [--limit=N]: replay recorded real commands and time the pipeline.
+  const replay = arg('voice-replay');
+  if (replay === 'classic' || replay === 'fast')
+    void whenPaired(
+      () =>
+        model
+          ? replayVoice(model, conductor, replay, Number(arg('limit') ?? 10))
+          : Promise.reject(new Error('no Baseten key')),
+      'VOICE_REPLAY',
+    );
 
   // --tidy-check=<url>,<url>: open each page in a lane window and report what Baton cleared out of
   // the way (consent banners, pop-ups) or found (bot checks). No model calls.

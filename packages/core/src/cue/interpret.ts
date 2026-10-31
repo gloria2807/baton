@@ -53,7 +53,7 @@ export interface CueInput {
   sites: string; // where lanes may go
 }
 
-const SYSTEM = `You are Baton's conductor. The person held a key, spoke a request, and pointed at things on screen while speaking. Each place the pointer rested became a numbered anchor. Decide the ONE move that does what they asked:
+export const CUE_SYSTEM = `You are Baton's conductor. The person held a key, spoke a request, and pointed at things on screen while speaking. Each place the pointer rested became a numbered anchor. Decide the ONE move that does what they asked:
 
 - "answer": a question about what they pointed at or see ("what is this?", "who sent this?", "summarise this"). Write "speech": what Baton says aloud: at most two short sentences and about 40 words, plain words, no lists or markdown, leading with what it is and the key facts (who, what, when, where, amounts).
 - "task": one thing to do in the browser, done by one lane. Write a complete "goal" that a browser agent can follow without seeing the anchors: copy every needed detail from the anchors and the profile into it. Pick "startUrl" (often the page an anchor is on).
@@ -75,7 +75,7 @@ Reply with JSON only, one of:
 {"kind":"rehearse"}
 {"kind":"perform","instruction":"..."}`;
 
-function anchorBlock(a: Anchor): string {
+export function anchorBlock(a: Anchor): string {
   const head = `Anchor ${a.n} (${a.source}${a.laneId ? `, lane ${a.laneId}` : ''}, pointed at ${(a.at / 1000).toFixed(1)} s): ${describeAnchor(a)}${a.url ? `\nURL: ${a.url}` : ''}`;
   const t = a.target;
   if (!t) return head;
@@ -111,7 +111,7 @@ export function cueMessages(i: CueInput): LaneMessage[] {
     .slice(0, 3)
     .map((a) => ({ type: 'image', jpegBase64: a.screenshot! }));
   return [
-    { role: 'system', content: SYSTEM },
+    { role: 'system', content: CUE_SYSTEM },
     { role: 'user', content: images.length ? [{ type: 'text', text }, ...images] : text },
   ];
 }

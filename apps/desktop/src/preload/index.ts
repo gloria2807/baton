@@ -30,6 +30,12 @@ const api = {
   checkHandAccuracy: () => ipcRenderer.invoke('hand:accuracy'),
   testGestures: () => ipcRenderer.invoke('hand:gestures'),
   onHand: on('hand'),
+  // Voice that feels alive: the model's reasoning as one line, sounds, and live caption counts.
+  onThinking: on('thinking'),
+  onSound: on('sound'),
+  captionStats: (updates: number) => ipcRenderer.send('caption:stats', updates),
+  // Status lines for the event log (never audio, text from the screen, or secrets).
+  logStatus: (line: string) => ipcRenderer.send('renderer:status', String(line).slice(0, 200)),
   onOverlay: on('overlay'),
   listNotes: () => ipcRenderer.invoke('notes:list'),
   removeNote: (id: number) => ipcRenderer.invoke('notes:remove', id),

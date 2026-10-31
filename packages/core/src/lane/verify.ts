@@ -165,6 +165,7 @@ export function verify(action: Action, before: LookResult, after: LookResult, ta
     case 'sheet_read':
     case 'doc_read':
     case 'note_site':
+    case 'post_finding':
     case 'sheet_write':
     case 'doc_write':
     case 'ask_person':

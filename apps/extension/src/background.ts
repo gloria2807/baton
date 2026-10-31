@@ -13,7 +13,7 @@ import {
 import { toIsoDate } from '@baton/core/lane/dates';
 import type { CollectResult, LaneInfo, TargetResult, ToContent, ToWorker } from './messages';
 import type { RestReport } from './pointer';
-import { exportText, settleFrame, tidyFrame, type TidyReport } from './tidy';
+import { settleFrame, tidyFrame, type TidyReport } from './tidy';
 
 interface Lane extends LaneInfo {
   windowId: number;
@@ -214,16 +214,32 @@ async function chord(tabId: number, key: string, code: string, vk: number, modif
 
 async function rectOf(tabId: number, selector: string): Promise<{ x: number; y: number } | null> {
   const r = await cdp<{ result: { value?: { x: number; y: number } | null } }>(tabId, 'Runtime.evaluate', {
-    expression: `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 40) }; })()`,
+    // Click inside the part of the element that is on screen: in a narrow lane window a Doc's page is
+    // wider than the window, and its middle is off to the side (measured: typing never landed).
+    expression: `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; const r = e.getBoundingClientRect();
+      const left = Math.max(r.left, 0), right = Math.min(r.right, innerWidth), top = Math.max(r.top, 0), bottom = Math.min(r.bottom, innerHeight);
+      if (right - left < 4 || bottom - top < 4) return null;
+      return { x: left + (right - left) / 2, y: top + Math.min((bottom - top) / 2, 40) }; })()`,
     returnByValue: true,
   });
   return r.result.value ?? null;
 }
 
+// Google sends a file's export to another domain (googleusercontent.com), which a page cannot
+// follow; the service worker can, with the person's own Google session.
 async function readExport(tabId: number, kind: 'sheet' | 'doc', range: string | null): Promise<string> {
-  const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: exportText, args: [kind, range] });
-  if (typeof r?.result !== 'string') throw new Error('the file could not be read');
-  return r.result;
+  const tab = await chrome.tabs.get(tabId);
+  const url = new URL(tab.url ?? '');
+  const m = url.pathname.match(/\/(spreadsheets|document)\/d\/([\w-]+)/);
+  if (!m) throw new Error('this is not a Google Sheets or Docs file');
+  const gid = new URLSearchParams(url.hash.slice(1)).get('gid') ?? url.searchParams.get('gid') ?? '0';
+  const exportUrl =
+    kind === 'sheet'
+      ? `https://docs.google.com/spreadsheets/d/${m[2]}/export?format=csv&gid=${gid}${range ? `&range=${encodeURIComponent(range)}` : ''}`
+      : `https://docs.google.com/document/d/${m[2]}/export?format=txt`;
+  const r = await fetch(exportUrl, { credentials: 'include' });
+  if (!r.ok) throw new Error(`the file could not be read (${r.status})`);
+  return (await r.text()).slice(0, 20000);
 }
 
 async function documentUsable(tabId: number): Promise<boolean> {
@@ -456,10 +472,21 @@ async function execute(c: Command): Promise<unknown> {
     case 'docWrite': {
       const l = lane(c.laneId);
       await waitForSettle(l.tabId);
-      const page = (await rectOf(l.tabId, '.kix-page-paginated')) ?? (await rectOf(l.tabId, '.kix-appview-editor'));
-      if (!page) throw new Error('the document page is not on this page; is this a Google Doc?');
-      await toTab(l.tabId, { kind: 'moveCursor', x: page.x, y: page.y }).catch(() => undefined);
-      await mouse(l.tabId, page.x, page.y);
+      // Docs takes keystrokes through a hidden text frame. Focusing it directly works whatever the
+      // window size (measured: in a quarter-screen lane window, clicking the page missed).
+      const focused = await cdp<{ result: { value?: boolean } }>(l.tabId, 'Runtime.evaluate', {
+        expression: `(() => { const f = document.querySelector('.docs-texteventtarget-iframe'); const t = f && f.contentDocument && (f.contentDocument.querySelector('[contenteditable="true"]') || f.contentDocument.body); if (!t) return false; t.focus(); return true; })()`,
+        returnByValue: true,
+      }).then(
+        (r) => r.result.value === true,
+        () => false,
+      );
+      if (!focused) {
+        const page = (await rectOf(l.tabId, '.kix-page-paginated')) ?? (await rectOf(l.tabId, '.kix-appview-editor'));
+        if (!page) throw new Error('the document page is not on this page; is this a Google Doc?');
+        await toTab(l.tabId, { kind: 'moveCursor', x: page.x, y: page.y }).catch(() => undefined);
+        await mouse(l.tabId, page.x, page.y);
+      }
       await chord(l.tabId, 'End', 'End', 35, 2);
       const paragraphs = c.text.split(/\r?\n/);
       for (const [i, p] of paragraphs.entries()) {

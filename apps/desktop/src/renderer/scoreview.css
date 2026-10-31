@@ -315,3 +315,47 @@
 .zoom .miss {
   color: var(--alert);
 }
+
+/* What the lanes told each other */
+.channel {
+  margin: 28px 0 8px;
+}
+.channel h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.channel ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.channel li {
+  display: grid;
+  grid-template-columns: 74px 170px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.channel .when {
+  color: var(--paper-2);
+  font-variant-numeric: tabular-nums;
+}
+.channel .who {
+  color: var(--c);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.channel .who i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--c);
+}
+.channel .re {
+  color: var(--brass);
+  text-decoration: none;
+}

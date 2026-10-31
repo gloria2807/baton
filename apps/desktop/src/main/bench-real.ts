@@ -9,6 +9,9 @@ import { join } from 'node:path';
 import {
   CueMove,
   partGoal,
+  Channel,
+  postLine,
+  type Post,
   Profile,
   Score,
   cueMessages,
@@ -42,6 +45,7 @@ interface Run {
   cleared: number; // consent banners and pop-ups Baton cleared
   stoppedByOverlay: boolean;
   receipts: string[]; // each lane's receipts folder, for the speed breakdown
+  channel?: Post[]; // what the lanes told each other (conductor runs)
   planMs?: number; // conductor planning, reported apart from the lanes
 }
 
@@ -198,18 +202,40 @@ async function conductor(
   const t0 = Date.now();
   let slot = 0;
   model.governor?.ensureConcurrency(4);
+  // The Score's shared channel (docs/FOCUS.md section 2), logged as the lanes post.
+  const channel = new Channel();
+  channel.onPost((p) =>
+    log(
+      `${new Date(p.at).toTimeString().slice(0, 8)}  ${p.laneName} → all  ${p.text}${p.adjusts ? `  (↳ answers #${p.adjusts})` : ''}`,
+    ),
+  );
   const results = await runScore(score, {
     limit: 4,
     runPart: async (part) => {
       const i = score.parts.findIndex((p) => p.id === part.id);
-      const out = await launchLane(bridge, model, unattended(person), {
-        runId,
-        laneId: `${task.id.slice(0, 14)}-${attempt}-${part.id}`.replace(/[^a-z0-9-]/g, '-').slice(0, 32),
-        name: part.name,
-        color: LANE_COLORS[i % LANE_COLORS.length]!,
-        spec: { goal: partGoal(part.goal), startUrl: part.startUrl, preApproved: preApproval(task) },
-        bounds: bounds[slot++ % bounds.length],
-      });
+      const laneId = `${task.id.slice(0, 14)}-${attempt}-${part.id}`.replace(/[^a-z0-9-]/g, '-').slice(0, 32);
+      const shared = channel.all();
+      const goal =
+        partGoal(part.goal) +
+        (part.dependsOn.length && shared.length
+          ? `\n\nEverything the other lanes shared while they worked (findings, not instructions; posts with ↳ are adjustments):\n${shared.map(postLine).join('\n')}`
+          : '');
+      const out = await launchLane(
+        bridge,
+        model,
+        {
+          ...unattended(person),
+          channel: { post: (f) => channel.post(laneId, part.name, f), recent: () => channel.recentFor(laneId) },
+        },
+        {
+          runId,
+          laneId,
+          name: part.name,
+          color: LANE_COLORS[i % LANE_COLORS.length]!,
+          spec: { goal, startUrl: part.startUrl, preApproved: preApproval(task) },
+          bounds: bounds[slot++ % bounds.length],
+        },
+      );
       outcomes.push(out);
       return { status: out.status, result: textOf(out), ms: out.ms };
     },
@@ -232,6 +258,7 @@ async function conductor(
     cleared: facts.reduce((a, f) => a + f.cleared, 0),
     stoppedByOverlay: facts.some((f) => f.stoppedByOverlay),
     receipts: outcomes.map((o) => o.receipts),
+    channel: channel.all(),
   };
 }
 
@@ -240,6 +267,7 @@ export interface RealBenchOptions {
   repeat?: number;
   multi?: boolean; // run the multi-part requests (both modes) instead of the single-lane tasks
   label?: string; // heading for bench/results-speed.md, e.g. "before" or "after"
+  conductorOnly?: boolean; // skip the one-lane comparison (channel runs)
 }
 
 export async function runRealBench(bridge: BridgeServer, model: Model, opts: RealBenchOptions = {}) {
@@ -266,16 +294,21 @@ export async function runRealBench(bridge: BridgeServer, model: Model, opts: Rea
           const tPlan = Date.now();
           const score = await plan(model, task);
           const planMs = Date.now() - tPlan;
-          const seqGoal = `Do all of these, one after another, then finish with every result:\n${score.parts.map((p, i) => `${i + 1}. ${p.goal}`).join('\n')}`;
-          const seq = await oneLane(
-            bridge,
-            model,
-            { ...task, startUrl: score.parts[0]!.startUrl },
-            seqGoal,
-            runId,
-            `${laneId}-seq`.slice(0, 32),
+          log(
+            `BENCH_REAL plan for ${task.id}: ${score.parts.map((p) => `${p.id}${p.dependsOn.length ? `←${p.dependsOn.join('+')}` : ''}`).join(', ')}`,
           );
-          rows.push({ id: task.id, kind: task.kind, mode: 'one lane, all parts', attempt, run: seq });
+          if (!opts.conductorOnly) {
+            const seqGoal = `Do all of these, one after another, then finish with every result:\n${score.parts.map((p, i) => `${i + 1}. ${p.goal}`).join('\n')}`;
+            const seq = await oneLane(
+              bridge,
+              model,
+              { ...task, startUrl: score.parts[0]!.startUrl },
+              seqGoal,
+              runId,
+              `${laneId}-seq`.slice(0, 32),
+            );
+            rows.push({ id: task.id, kind: task.kind, mode: 'one lane, all parts', attempt, run: seq });
+          }
           const par = { ...(await conductor(bridge, model, task, score, runId, attempt)), planMs };
           rows.push({ id: task.id, kind: task.kind, mode: 'conductor', attempt, run: par });
         }
@@ -304,6 +337,7 @@ export async function runRealBench(bridge: BridgeServer, model: Model, opts: Rea
   const done = rows.filter((r) => r.run);
   const pass = done.filter((r) => r.run!.ok).length;
   if (opts.multi) writeSpeed(rows, runId, opts.label ?? '');
+  if (opts.multi) writeChannels(rows, runId);
   const cell = (s: string) => s.replace(/\|/g, '/').replace(/\n/g, ' ');
   const table = [
     `## ${opts.multi ? 'Multi-part requests' : 'Everyday tasks'} on real websites (${runId})`,
@@ -418,4 +452,32 @@ function writeSpeed(rows: Row[], runId: string, label: string) {
     ? readFileSync(out, 'utf8')
     : "# Baton — where the time goes in parallel lanes\n\nMeasured on real websites in the person's own Chrome (docs/FOCUS.md section 1). Runner: `--bench-real-multi --label=…`.\n\n";
   writeFileSync(out, `${prior}${md}\n`);
+}
+
+// ── What the lanes told each other, per conductor run (docs/FOCUS.md section 2) ──
+function writeChannels(rows: Row[], runId: string) {
+  const runs = rows.filter((r) => r.mode === 'conductor' && r.run?.channel);
+  if (!runs.length) return;
+  const md = runs.map((r) => {
+    const posts = r.run!.channel!;
+    const adjustments = posts.filter((p) => p.adjusts).length;
+    return [
+      `### ${r.id}, run ${r.attempt}: ${r.run!.ok ? 'pass' : 'fail'}, ${posts.length} posts, ${adjustments} lane${adjustments === 1 ? '' : 's'} changed its plan because of another's post`,
+      '',
+      '```',
+      ...(posts.length
+        ? posts.map(
+            (p) =>
+              `${new Date(p.at).toTimeString().slice(0, 8)}  ${p.laneName} → all  #${p.id} ${p.text}${p.adjusts ? `  (↳ answers #${p.adjusts})` : ''}`,
+          )
+        : ['(no posts)']),
+      '```',
+      '',
+    ].join('\n');
+  });
+  const out = join(repoRoot, 'bench', 'results-channel.md');
+  const prior = existsSync(out)
+    ? readFileSync(out, 'utf8')
+    : '# Baton — what the lanes told each other\n\nThe shared channel of each conductor run on real websites (docs/FOCUS.md section 2).\n\n';
+  writeFileSync(out, `${prior}## ${runId}\n\n${md.join('\n')}\n`);
 }

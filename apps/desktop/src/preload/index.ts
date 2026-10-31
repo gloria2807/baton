@@ -32,6 +32,7 @@ const api = {
   onHand: on('hand'),
   // Voice that feels alive: the model's reasoning as one line, sounds, and live caption counts.
   onThinking: on('thinking'),
+  onChannel: on('channel'),
   onSound: on('sound'),
   captionStats: (updates: number) => ipcRenderer.send('caption:stats', updates),
   // Status lines for the event log (never audio, text from the screen, or secrets).

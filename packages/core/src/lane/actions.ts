@@ -62,6 +62,16 @@ export const Action = z.discriminatedUnion('tool', [
   z.object({ tool: z.literal('sheet_read'), range: z.string().max(30).optional() }),
   z.object({ tool: z.literal('doc_write'), text: z.coerce.string().min(1).max(8000) }),
   z.object({ tool: z.literal('doc_read') }),
+  // A finding for the other lanes of the same plan (docs/FOCUS.md section 2).
+  z.object({
+    tool: z.literal('post_finding'),
+    text: z
+      .string()
+      .min(3)
+      .transform((s) => s.replace(/\s+/g, ' ').trim().slice(0, 300)),
+    facts: z.record(z.string(), z.coerce.string()).optional(),
+    adjusts: z.coerce.number().int().positive().optional(),
+  }),
   // A reliable trick for this site, kept in Baton's site notes for the next lane (the person can review them).
   z.object({
     tool: z.literal('note_site'),
@@ -245,6 +255,16 @@ const TOOL_PARAMS: Record<Tool, { description: string; properties: Record<string
     required: ['text'],
   },
   doc_read: { description: "Google Docs only: read the document's text.", properties: {}, required: [] },
+  post_finding: {
+    description:
+      "Only in a plan with other lanes: tell them one finding that matters to their parts (a date, a time, a place, a price, a constraint), in one sentence of your own words. Not progress updates. When you change your own work because of another lane's post, post what you changed and why, with adjusts set to that post's number.",
+    properties: {
+      text: str('One sentence, e.g. "Rain likely Saturday afternoon"'),
+      facts: { type: 'object', description: 'Optional short facts, e.g. {"date": "2026-11-07", "time": "14:00"}' },
+      adjusts: int('The number of the post that made you change your own work, if any'),
+    },
+    required: ['text'],
+  },
   note_site: {
     description:
       'Save a short, reliable tip about how this site works, for future lanes (e.g. "Search results load only after pressing Enter"). Only for tricks that worked.',
@@ -317,5 +337,6 @@ export const TOOL_GUIDE = `Tools (pick exactly one per step):
 - {"tool":"doc_write","text":string} Google Docs: type text at the end of the document.
 - {"tool":"doc_read"} Google Docs: read the document's text.
 - {"tool":"note_site","note":string} save a reliable tip about this site for future lanes.
+- {"tool":"post_finding","text":string,"facts":{},"adjusts":number} tell the other lanes of the plan a finding that matters to their parts.
 - {"tool":"ask_person","question":string} ask the person when you need them (e.g. to sign in or enter card details) or are stuck.
 - {"tool":"finish","result":string,"data":any} stop: the goal is done. result is a one-line answer for the person.`;

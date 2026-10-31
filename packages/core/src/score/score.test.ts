@@ -113,6 +113,20 @@ describe('scheduler', () => {
     expect(updates.filter((u) => u.state === 'settled')).toHaveLength(4);
   });
 
+  it('still runs a write-up when only some of the parts it depends on failed', async () => {
+    const s = Score.parse({ parts: [part('weather'), part('museum'), part('writeup', ['weather', 'museum'])] });
+    const goals: Record<string, string> = {};
+    const results = await runScore(s, {
+      runPart: async (p): Promise<PartResult> => {
+        goals[p.id] = p.goal;
+        return p.id === 'museum' ? { status: 'failed', result: 'site down' } : { status: 'done', result: `${p.id} ok` };
+      },
+    });
+    expect(results.writeup!.status).toBe('done');
+    expect(goals.writeup).toContain('weather ok');
+    expect(goals.writeup).toMatch(/failed, partial/);
+  });
+
   it('turns a thrown lane error into a failed part', async () => {
     const results = await runScore(Score.parse({ parts: [part('a')] }), {
       runPart: async () => {

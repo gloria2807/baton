@@ -26,3 +26,4 @@ export * from './hand/filter.js';
 export * from './hand/calibration.js';
 export * from './hand/gestures.js';
 export * from './cue/listen.js';
+export * from './score/channel.js';

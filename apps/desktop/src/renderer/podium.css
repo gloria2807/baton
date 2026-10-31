@@ -694,3 +694,29 @@ select option {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* The lanes' channel: the last three posts while a Score runs */
+.thread {
+  padding: 6px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.thread .post {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.thread .who {
+  color: var(--c);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thread .what {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

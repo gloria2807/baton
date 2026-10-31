@@ -5,7 +5,12 @@ const roam = { url: 'http://localhost:4402/book/flight/x', title: 'Roam' };
 const ledgerly = { url: 'http://localhost:4401/bills/new', title: 'Ledgerly' };
 const post = (submitLabel?: string) => ({ method: 'post', action: '/x', submitLabel });
 const get = (submitLabel?: string) => ({ method: 'get', action: '/x', submitLabel });
-const button = (name: string, extra: Partial<TargetFacts> = {}): TargetFacts => ({ tag: 'button', role: 'button', name, ...extra });
+const button = (name: string, extra: Partial<TargetFacts> = {}): TargetFacts => ({
+  tag: 'button',
+  role: 'button',
+  name,
+  ...extra,
+});
 const link = (name: string, href = 'http://localhost/x'): TargetFacts => ({ tag: 'a', role: 'link', name, href });
 const category = (g: ReturnType<typeof gateClick>) => (g.kind === 'approve' ? g.category : 'allow');
 
@@ -44,7 +49,9 @@ describe('approval gate: irreversible actions stop', () => {
   it('any other POST form submission is a submit', () => {
     expect(category(gateClick(button('Save bill', { form: post() }), ledgerly))).toBe('submit');
     expect(category(gateClick(button('Save draft', { form: post() }), ledgerly))).toBe('submit');
-    expect(category(gateClick({ tag: 'input', role: 'button', name: 'Go ahead', type: 'submit', form: post() }, ledgerly))).toBe('submit');
+    expect(
+      category(gateClick({ tag: 'input', role: 'button', name: 'Go ahead', type: 'submit', form: post() }, ledgerly)),
+    ).toBe('submit');
   });
 
   it('Enter in a field submits its form and is gated the same way', () => {

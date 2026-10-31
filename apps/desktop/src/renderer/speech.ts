@@ -5,7 +5,8 @@ let voice: SpeechSynthesisVoice | null = null;
 function pickVoice() {
   const voices = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'));
   // Prefer a natural-sounding English voice when Windows offers one.
-  voice = voices.find((v) => /natural|aria|jenny|zira/i.test(v.name)) ?? voices.find((v) => v.default) ?? voices[0] ?? null;
+  voice =
+    voices.find((v) => /natural|aria|jenny|zira/i.test(v.name)) ?? voices.find((v) => v.default) ?? voices[0] ?? null;
 }
 speechSynthesis.onvoiceschanged = pickVoice;
 pickVoice();

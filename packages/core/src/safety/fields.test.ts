@@ -25,21 +25,45 @@ describe('blocked fields', () => {
   it('blocks payment card fields', () => {
     for (const ac of ['cc-number', 'cc-csc', 'cc-exp', 'cc-exp-month', 'cc-name', 'billing cc-number'])
       expect(blockedFieldReason(input({ autocomplete: ac })), ac).toBe('payment-card');
-    for (const label of ['Card number', 'CVC', 'CVV', 'Expiry', 'Expiration date', 'MM/YY', 'Credit card', 'IBAN', 'Account number'])
+    for (const label of [
+      'Card number',
+      'CVC',
+      'CVV',
+      'Expiry',
+      'Expiration date',
+      'MM/YY',
+      'Credit card',
+      'IBAN',
+      'Account number',
+    ])
       expect(blockedFieldReason(input({ label })), label).toBe('payment-card');
     expect(blockedFieldReason(input({ name: 'cardnumber' }))).toBe('payment-card');
   });
 
   it('matches the demo sites exactly', () => {
     // Ledgerly sign-in
-    expect(blockedFieldReason(input({ type: 'email', name: 'email', autocomplete: 'username', label: 'Work email' }))).toBeNull();
-    expect(blockedFieldReason(input({ type: 'password', name: 'password', autocomplete: 'current-password', label: 'Password' }))).toBe('password');
-    expect(blockedFieldReason(input({ name: 'otp', autocomplete: 'one-time-code', label: 'One-time code' }))).toBe('one-time-code');
+    expect(
+      blockedFieldReason(input({ type: 'email', name: 'email', autocomplete: 'username', label: 'Work email' })),
+    ).toBeNull();
+    expect(
+      blockedFieldReason(
+        input({ type: 'password', name: 'password', autocomplete: 'current-password', label: 'Password' }),
+      ),
+    ).toBe('password');
+    expect(blockedFieldReason(input({ name: 'otp', autocomplete: 'one-time-code', label: 'One-time code' }))).toBe(
+      'one-time-code',
+    );
     // Roam payment
-    expect(blockedFieldReason(input({ id: 'cc-number', name: 'cardnumber', autocomplete: 'cc-number', label: 'Card number' }))).toBe('payment-card');
+    expect(
+      blockedFieldReason(
+        input({ id: 'cc-number', name: 'cardnumber', autocomplete: 'cc-number', label: 'Card number' }),
+      ),
+    ).toBe('payment-card');
     expect(blockedFieldReason(input({ id: 'cc-csc', name: 'cvc', label: 'Security code' }))).not.toBeNull();
     // Roam traveller details are fine
-    expect(blockedFieldReason(input({ id: 'name', name: 'name', autocomplete: 'name', label: 'Full name' }))).toBeNull();
+    expect(
+      blockedFieldReason(input({ id: 'name', name: 'name', autocomplete: 'name', label: 'Full name' })),
+    ).toBeNull();
   });
 
   it('allows ordinary fields Baton needs', () => {

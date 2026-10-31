@@ -80,7 +80,10 @@ chrome.runtime.sendMessage({ kind: 'whoami' }).then(
   (info: LaneInfo | null) => {
     applyLane(info);
     // A rehearsal may be under way: this page load is one of its steps.
-    chrome.runtime.sendMessage({ kind: 'recording?' }).then((on: boolean) => setRecording(!!on), () => undefined);
+    chrome.runtime.sendMessage({ kind: 'recording?' }).then(
+      (on: boolean) => setRecording(!!on),
+      () => undefined,
+    );
   },
   () => undefined,
 );

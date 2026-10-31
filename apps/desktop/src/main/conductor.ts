@@ -62,12 +62,46 @@ export interface LaneView {
 }
 
 export type Card =
-  | { kind: 'approval'; id: number; laneId: string; laneName: string; color: string; summary: string; reason: string; image?: string }
+  | {
+      kind: 'approval';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      summary: string;
+      reason: string;
+      image?: string;
+    }
   | { kind: 'question'; id: number; laneId: string; laneName: string; color: string; question: string }
-  | { kind: 'injection'; id: number; laneId: string; laneName: string; color: string; url: string; findings: Array<{ source: string; text: string }> }
-  | { kind: 'result'; id: number; laneId: string; laneName: string; color: string; status: string; result: string; detail: string }
+  | {
+      kind: 'injection';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      url: string;
+      findings: Array<{ source: string; text: string }>;
+    }
+  | {
+      kind: 'result';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      status: string;
+      result: string;
+      detail: string;
+    }
   // Rehearsal: the steps recorded so far, while the person works.
-  | { kind: 'rehearsal'; id: number; laneId: string; laneName: string; color: string; steps: string[]; recording: boolean }
+  | {
+      kind: 'rehearsal';
+      id: number;
+      laneId: string;
+      laneName: string;
+      color: string;
+      steps: string[];
+      recording: boolean;
+    }
   // The routine learned from a rehearsal, for the person to check and correct.
   | { kind: 'routine'; id: number; laneId: string; laneName: string; color: string; routine: Routine }
   // A Score's merged result: one line per lane, and every action still waiting for the person's yes.
@@ -165,7 +199,10 @@ export class Conductor {
   }
 
   private publishCards() {
-    this.send('cards', [...this.cards.values()].map((p) => p.card));
+    this.send(
+      'cards',
+      [...this.cards.values()].map((p) => p.card),
+    );
   }
 
   private patchCard(id: number, patch: Partial<Card>) {
@@ -200,7 +237,11 @@ export class Conductor {
   // A spoken cue first answers whatever card is waiting; returns true if it did. A cue that points
   // at things is a new request, not an answer to a lane's question.
   answerByVoice(transcript: string, pointed = false): boolean {
-    const waiting = [...this.cards.values()].find((p) => !['result', 'rehearsal', 'routine'].includes(p.card.kind) && !(p.card.kind === 'score' && !p.card.approvals.length));
+    const waiting = [...this.cards.values()].find(
+      (p) =>
+        !['result', 'rehearsal', 'routine'].includes(p.card.kind) &&
+        !(p.card.kind === 'score' && !p.card.approvals.length),
+    );
     if (!waiting) return false;
     const yesNo = voiceAnswer(transcript);
     const { card } = waiting;
@@ -231,7 +272,13 @@ export class Conductor {
     const base = { laneId, laneName: name, color };
     return {
       approve: async (req) => {
-        const a = await this.show({ kind: 'approval', ...base, summary: req.summary, reason: req.reason, image: cropElement(req.look, req.element.rect) });
+        const a = await this.show({
+          kind: 'approval',
+          ...base,
+          summary: req.summary,
+          reason: req.reason,
+          image: cropElement(req.look, req.element.rect),
+        });
         return 'choice' in a && a.choice === 'approve';
       },
       ask: async (question) => {
@@ -239,7 +286,12 @@ export class Conductor {
         return 'text' in a ? { answer: a.text } : a.choice === 'stop' ? { stop: true } : { answer: 'Done.' };
       },
       injection: async (findings: InjectionFinding[], look) => {
-        const a = await this.show({ kind: 'injection', ...base, url: look.url, findings: findings.slice(0, 3).map((f) => ({ source: f.source, text: f.text })) });
+        const a = await this.show({
+          kind: 'injection',
+          ...base,
+          url: look.url,
+          findings: findings.slice(0, 3).map((f) => ({ source: f.source, text: f.text })),
+        });
         return 'choice' in a && a.choice === 'continue' ? 'continue' : 'stop';
       },
       status: (s) => {
@@ -296,7 +348,15 @@ export class Conductor {
         keepOpen: opts.keepOpen ?? true,
       });
       const detail = `${out.steps} steps · ${(out.ms / 1000).toFixed(0)} s · $${costUsd(out.usage).toFixed(3)}`;
-      void this.show({ kind: 'result', laneId, laneName: opts.name, color, status: out.status, result: out.result, detail });
+      void this.show({
+        kind: 'result',
+        laneId,
+        laneName: opts.name,
+        color,
+        status: out.status,
+        result: out.result,
+        detail,
+      });
       return out;
     } finally {
       this.lanes.delete(laneId);
@@ -311,7 +371,10 @@ export class Conductor {
   async runScoreCue(score: Score, opts: ScoreOptions = {}) {
     const model = this.getModel();
     if (!model || !this.bridge.connected) {
-      this.send('podium:notice', model ? 'The Chrome extension is not connected.' : 'No Baseten key: Baton cannot run lanes.');
+      this.send(
+        'podium:notice',
+        model ? 'The Chrome extension is not connected.' : 'No Baseten key: Baton cannot run lanes.',
+      );
       return;
     }
     if (this.busy) {
@@ -321,13 +384,39 @@ export class Conductor {
     this.busy = true;
     const runId = `score-${new Date().toISOString().replace(/[:.]/g, '-')}`;
     const slots = Array(Math.min(score.parts.length, opts.limit ?? DEFAULT_LANE_LIMIT)).fill(false);
-    const run: ScoreRunState = { score, runId, startedAt: Date.now(), parts: new Map(), pending: [], bundleAnswered: false, spoke: false, opts, slots };
+    const run: ScoreRunState = {
+      score,
+      runId,
+      startedAt: Date.now(),
+      parts: new Map(),
+      pending: [],
+      bundleAnswered: false,
+      spoke: false,
+      opts,
+      slots,
+    };
     this.run = run;
     score.parts.forEach((part, i) => {
-      const st: PartState = { part, laneId: `${part.id}`.slice(0, 24), color: LANE_COLORS[i % LANE_COLORS.length]!, state: 'waiting', inbox: [], attempt: 1, receipts: [] };
+      const st: PartState = {
+        part,
+        laneId: `${part.id}`.slice(0, 24),
+        color: LANE_COLORS[i % LANE_COLORS.length]!,
+        state: 'waiting',
+        inbox: [],
+        attempt: 1,
+        receipts: [],
+      };
       run.parts.set(part.id, st);
       // Many short parts (a performed routine) show a chip only while they run.
-      if (!opts.closeWhenDone) this.lanes.set(st.laneId, { laneId: st.laneId, name: part.name, color: st.color, state: 'running', line: 'Waiting to start…', step: 0 });
+      if (!opts.closeWhenDone)
+        this.lanes.set(st.laneId, {
+          laneId: st.laneId,
+          name: part.name,
+          color: st.color,
+          state: 'running',
+          line: 'Waiting to start…',
+          step: 0,
+        });
     });
     this.publishLanes();
     log(`score ${runId}: ${score.parts.length} parts`);
@@ -370,7 +459,14 @@ export class Conductor {
     const slot = Math.max(0, run.slots.indexOf(false));
     run.slots[slot] = true;
     if (!this.lanes.has(st.laneId)) {
-      this.lanes.set(st.laneId, { laneId: st.laneId, name: part.name, color: st.color, state: 'running', line: 'Starting…', step: 0 });
+      this.lanes.set(st.laneId, {
+        laneId: st.laneId,
+        name: part.name,
+        color: st.color,
+        state: 'running',
+        line: 'Starting…',
+        step: 0,
+      });
       this.publishLanes();
     }
     const bounds = tile(run.slots.length, workArea, 110)[slot];
@@ -418,7 +514,12 @@ export class Conductor {
             st.state = 'running';
             resolve(yes);
           };
-          run.pending.push({ partId: st.part.id, summary: req.summary, image: cropElement(req.look, req.element.rect), resolve: done });
+          run.pending.push({
+            partId: st.part.id,
+            summary: req.summary,
+            image: cropElement(req.look, req.element.rect),
+            resolve: done,
+          });
           st.state = 'waiting-approval';
           base.status({ kind: 'waiting-approval', summary: req.summary });
           this.refreshBundle(run);
@@ -441,7 +542,14 @@ export class Conductor {
         status: st.state === 'settled' ? st.result!.status : st.state,
         line: st.state === 'settled' ? st.result!.result : (this.lanes.get(st.laneId)?.line ?? ''),
       })),
-      approvals: run.bundleAnswered ? [] : run.pending.map((p) => ({ laneName: run.parts.get(p.partId)!.part.name, color: run.parts.get(p.partId)!.color, summary: p.summary, image: p.image })),
+      approvals: run.bundleAnswered
+        ? []
+        : run.pending.map((p) => ({
+            laneName: run.parts.get(p.partId)!.part.name,
+            color: run.parts.get(p.partId)!.color,
+            summary: p.summary,
+            image: p.image,
+          })),
       seconds: Math.round((Date.now() - run.startedAt) / 1000),
       manualMinutes: manualMinutes(run.score),
       runId: run.runId,
@@ -457,7 +565,17 @@ export class Conductor {
   private async merged(run: ScoreRunState): Promise<{ headline: string; speech: string }> {
     const results = Object.fromEntries([...run.parts.values()].map((st) => [st.part.id, st.result]));
     try {
-      const r = await this.getModel()!.json(MergeReply, toOpenAI(mergeMessages(run.score, results, run.pending.map((p) => p.summary))), 'low');
+      const r = await this.getModel()!.json(
+        MergeReply,
+        toOpenAI(
+          mergeMessages(
+            run.score,
+            results,
+            run.pending.map((p) => p.summary),
+          ),
+        ),
+        'low',
+      );
       return r.value;
     } catch {
       return { headline: run.score.title, speech: 'The lanes have finished. Here is what they found.' };
@@ -467,7 +585,12 @@ export class Conductor {
   // Once no lane is still working and some wait for a yes, show one card with everything.
   private async checkApprovalPoint(run: ScoreRunState) {
     if (run.bundleCard !== undefined || run.bundleAnswered || !run.pending.length) return;
-    if (!readyForApprovals([...run.parts.values()].map((st) => ({ id: st.part.id, dependsOn: st.part.dependsOn, phase: st.state })))) return;
+    if (
+      !readyForApprovals(
+        [...run.parts.values()].map((st) => ({ id: st.part.id, dependsOn: st.part.dependsOn, phase: st.state })),
+      )
+    )
+      return;
     run.bundleCard = -1; // claimed while the summary is written
     const m = await this.merged(run);
     this.send('speak', m.speech);
@@ -493,7 +616,14 @@ export class Conductor {
       manualMinutes: manualMinutes(run.score),
       headline: m.headline,
       speech: m.speech,
-      parts: [...run.parts.values()].map((st) => ({ id: st.part.id, name: st.part.name, color: st.color, laneId: st.laneId, result: st.result, receipts: st.receipts })),
+      parts: [...run.parts.values()].map((st) => ({
+        id: st.part.id,
+        name: st.part.name,
+        color: st.color,
+        laneId: st.laneId,
+        result: st.result,
+        receipts: st.receipts,
+      })),
     };
     writeFileSync(join(outDir('scores'), `${run.runId}.json`), JSON.stringify(record, null, 2));
     log(`score ${run.runId} finished in ${record.seconds} s`);
@@ -514,7 +644,10 @@ export class Conductor {
 
   async startRehearsal() {
     if (this.busy || this.rehearsal) {
-      this.send('podium:notice', this.rehearsal ? 'Already watching.' : 'Lanes are running. Say “everyone stop” first.');
+      this.send(
+        'podium:notice',
+        this.rehearsal ? 'Already watching.' : 'Lanes are running. Say “everyone stop” first.',
+      );
       return;
     }
     if (!this.bridge.connected) {
@@ -522,7 +655,14 @@ export class Conductor {
       return;
     }
     await this.bridge.request({ op: 'recordStart' });
-    const answer = this.show({ kind: 'rehearsal', laneId: 'rehearsal', laneName: 'Watching you', color: '#c99a3b', steps: [], recording: true });
+    const answer = this.show({
+      kind: 'rehearsal',
+      laneId: 'rehearsal',
+      laneName: 'Watching you',
+      color: '#c99a3b',
+      steps: [],
+      recording: true,
+    });
     this.rehearsal = { startedAt: Date.now(), steps: [], cardId: this.nextCard - 1 };
     log('rehearsal started');
     this.send('speak', 'Watching. Do it once, and tell me what matters as you go. Say “that’s it” when you are done.');
@@ -552,7 +692,10 @@ export class Conductor {
     await this.bridge.request({ op: 'recordStop' }).catch(() => undefined);
     if (this.cards.has(r.cardId)) this.answer(r.cardId, { choice: 'dismiss' });
     const steps = cleanRehearsal(r.steps);
-    writeFileSync(join(outDir('rehearsals'), `rehearsal-${new Date(r.startedAt).toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify({ steps: r.steps }, null, 2));
+    writeFileSync(
+      join(outDir('rehearsals'), `rehearsal-${new Date(r.startedAt).toISOString().replace(/[:.]/g, '-')}.json`),
+      JSON.stringify({ steps: r.steps }, null, 2),
+    );
     log(`rehearsal finished: ${r.steps.length} recorded, ${steps.length} after cleaning`);
     if (!steps.some((s) => s.type === 'input' || s.type === 'paste' || s.type === 'click')) {
       this.send('speak', 'I did not see you do anything in Chrome. Say “watch me” to try again.');
@@ -562,12 +705,26 @@ export class Conductor {
     try {
       const out = await this.getModel()!.json(Routine, toOpenAI(compileMessages(steps, variableHints(steps))), 'low');
       // Items handled during the rehearsal are done: never do them twice.
-      const doneUrls = [...new Set(steps.filter((s) => s.type === 'navigate' && s.url !== out.value.itemSourceUrl).map((s) => (s as { url: string }).url))];
+      const doneUrls = [
+        ...new Set(
+          steps
+            .filter((s) => s.type === 'navigate' && s.url !== out.value.itemSourceUrl)
+            .map((s) => (s as { url: string }).url),
+        ),
+      ];
       this.routine = { ...out.value, doneUrls };
       writeFileSync(join(outDir('routines'), 'latest.json'), JSON.stringify(this.routine, null, 2));
-      log(`routine compiled: ${out.value.name} (${out.value.variables.length} variables, ${out.value.steps.length} steps, ${Math.round(out.ms)} ms)`);
+      log(
+        `routine compiled: ${out.value.name} (${out.value.variables.length} variables, ${out.value.steps.length} steps, ${Math.round(out.ms)} ms)`,
+      );
       this.send('speak', `Got it: ${out.value.name}. Say “now do the rest” when you are ready.`);
-      const edit = await this.show({ kind: 'routine', laneId: 'routine', laneName: 'Routine', color: '#c99a3b', routine: this.routine });
+      const edit = await this.show({
+        kind: 'routine',
+        laneId: 'routine',
+        laneName: 'Routine',
+        color: '#c99a3b',
+        routine: this.routine,
+      });
       if ('text' in edit) this.applyRoutineEdits(edit.text);
     } catch (e) {
       this.send('podium:notice', `Could not learn the routine: ${(e as Error).message}`);
@@ -578,14 +735,21 @@ export class Conductor {
   private applyRoutineEdits(json: string) {
     if (!this.routine) return;
     try {
-      const edits = z.array(z.object({ index: z.number().int(), name: z.string(), description: z.string() })).parse(JSON.parse(json));
+      const edits = z
+        .array(z.object({ index: z.number().int(), name: z.string(), description: z.string() }))
+        .parse(JSON.parse(json));
       const variables = this.routine.variables.map((v, i) => {
         const e = edits.find((x) => x.index === i);
         return e ? { ...v, name: e.name, description: e.description } : v;
       });
       // Renamed variables are renamed in the steps too.
-      const renames = this.routine.variables.map((v, i) => [v.name, variables[i]!.name] as const).filter(([a, b]) => a !== b);
-      const steps = this.routine.steps.map((s) => ({ ...s, do: renames.reduce((t, [a, b]) => t.split(`{${a}}`).join(`{${b}}`), s.do) }));
+      const renames = this.routine.variables
+        .map((v, i) => [v.name, variables[i]!.name] as const)
+        .filter(([a, b]) => a !== b);
+      const steps = this.routine.steps.map((s) => ({
+        ...s,
+        do: renames.reduce((t, [a, b]) => t.split(`{${a}}`).join(`{${b}}`), s.do),
+      }));
       this.routine = { ...Routine.parse({ ...this.routine, variables, steps }), doneUrls: this.routine.doneUrls };
       writeFileSync(join(outDir('routines'), 'latest.json'), JSON.stringify(this.routine, null, 2));
       log('routine corrected by the person');
@@ -611,8 +775,20 @@ export class Conductor {
     this.send('podium:notice', 'Finding the rest…');
     let links: Array<{ name: string; href: string }>;
     try {
-      await this.bridge.request({ op: 'openLane', laneId: 'finder', url: source, color: '#c99a3b', title: 'Finding the items', bounds: this.laneBounds() }, 30000);
-      const look = LookResult.parse(await this.bridge.request({ op: 'look', laneId: 'finder', screenshot: false }, 30000));
+      await this.bridge.request(
+        {
+          op: 'openLane',
+          laneId: 'finder',
+          url: source,
+          color: '#c99a3b',
+          title: 'Finding the items',
+          bounds: this.laneBounds(),
+        },
+        30000,
+      );
+      const look = LookResult.parse(
+        await this.bridge.request({ op: 'look', laneId: 'finder', screenshot: false }, 30000),
+      );
       links = look.elements.filter((e) => e.href && e.name).map((e) => ({ name: e.name, href: e.href! }));
     } finally {
       await this.bridge.request({ op: 'closeLane', laneId: 'finder' }).catch(() => undefined);
@@ -620,14 +796,24 @@ export class Conductor {
     const picked = await model.json(ItemPick, toOpenAI(itemsMessages(routine, links, routine.doneUrls)), 'low');
     // Only real links from the page, never one already done, each once.
     const items = pickedItems(picked.value, links, routine.doneUrls);
-    log(`perform: ${links.length} links on ${source}, model picked ${picked.value.numbers.length}, ${items.length} kept`);
+    log(
+      `perform: ${links.length} links on ${source}, model picked ${picked.value.numbers.length}, ${items.length} kept`,
+    );
     if (!items.length) {
       this.send('speak', 'I could not find any more items to do.');
       return;
     }
     log(`perform ${routine.name}: ${items.length} items`);
     // One approval for the whole batch: the saves the routine makes, on the sites it makes them.
-    const hosts = [...new Set(routine.steps.map((s) => s.page).filter((p): p is string => !!p).map((p) => new URL(p).host).filter((h) => h !== new URL(source).host))];
+    const hosts = [
+      ...new Set(
+        routine.steps
+          .map((s) => s.page)
+          .filter((p): p is string => !!p)
+          .map((p) => new URL(p).host)
+          .filter((h) => h !== new URL(source).host),
+      ),
+    ];
     this.send('speak', `I found ${items.length} more. Shall I do them all?`);
     const a = await this.show({
       kind: 'approval',
@@ -641,10 +827,21 @@ export class Conductor {
     const score = Score.parse({
       title: routine.name,
       final: `Say how many ${routine.itemKind}s were done, how many were already done, and any that failed.`,
-      parts: items.map((it, i) => ({ id: `i${i + 1}`, name: `#${i + 1}`, goal: performGoal(routine, it), startUrl: it.url, manualMinutes: 1.5 })),
+      parts: items.map((it, i) => ({
+        id: `i${i + 1}`,
+        name: `#${i + 1}`,
+        goal: performGoal(routine, it),
+        startUrl: it.url,
+        manualMinutes: 1.5,
+      })),
     });
     // Four at a time: fast enough to watch, gentle on the model's rate limit and the budget.
-    await this.runScoreCue(score, { limit: 4, preApproved: hosts.length ? { categories: ['submit'], hosts } : undefined, progress: `Performing “${routine.name}”`, closeWhenDone: true });
+    await this.runScoreCue(score, {
+      limit: 4,
+      preApproved: hosts.length ? { categories: ['submit'], hosts } : undefined,
+      progress: `Performing “${routine.name}”`,
+      closeWhenDone: true,
+    });
   }
 
   // Pointing at a lane window and speaking changes only that lane.
@@ -683,7 +880,12 @@ export class Conductor {
     const command = routineCommand(cue.transcript);
     if (this.rehearsal) {
       if (command === 'finish') await this.finishRehearsal();
-      else this.addRehearsalStep({ type: 'narration', at: Date.now() - this.rehearsal.startedAt, text: cue.transcript.slice(0, 1000) });
+      else
+        this.addRehearsalStep({
+          type: 'narration',
+          at: Date.now() - this.rehearsal.startedAt,
+          text: cue.transcript.slice(0, 1000),
+        });
       return;
     }
     if (command === 'rehearse') return this.startRehearsal();
@@ -702,7 +904,20 @@ export class Conductor {
       references,
     };
     try {
-      const r = await model.json(CueMove, toOpenAI(cueMessages({ transcript: cue.transcript, intent: cue.intent, anchors: cue.anchors, references, profile: this.getProfile(), sites: SITES })), 'low');
+      const r = await model.json(
+        CueMove,
+        toOpenAI(
+          cueMessages({
+            transcript: cue.transcript,
+            intent: cue.intent,
+            anchors: cue.anchors,
+            references,
+            profile: this.getProfile(),
+            sites: SITES,
+          }),
+        ),
+        'low',
+      );
       const move = r.value;
       record.move = move;
       record.ms = Math.round(r.ms);
@@ -721,7 +936,15 @@ export class Conductor {
     if (move.kind === 'answer' || move.kind === 'clarify') {
       const speech = move.kind === 'answer' ? move.speech : move.question;
       this.send('speak', speech);
-      void this.show({ kind: 'result', laneId: 'answer', laneName: 'Baton', color: '#c99a3b', status: move.kind === 'answer' ? 'answer' : 'question', result: speech, detail: '' });
+      void this.show({
+        kind: 'result',
+        laneId: 'answer',
+        laneName: 'Baton',
+        color: '#c99a3b',
+        status: move.kind === 'answer' ? 'answer' : 'question',
+        result: speech,
+        detail: '',
+      });
       return;
     }
     if (this.busy) {
@@ -757,8 +980,13 @@ export class Conductor {
       this.send('podium:notice', 'Point at a place in a Chrome tab for “there”.');
       return;
     }
-    const out = await this.runOne({ name: move.name, goal: transferGoal(from, to, move.instruction), startUrl: to.url });
+    const out = await this.runOne({
+      name: move.name,
+      goal: transferGoal(from, to, move.instruction),
+      startUrl: to.url,
+    });
     // The person is looking at the destination in their own tab: show them the result there.
-    if (out.status === 'done' && to.tabId !== undefined && !to.laneId) await this.bridge.request({ op: 'reloadTab', tabId: to.tabId }).catch(() => undefined);
+    if (out.status === 'done' && to.tabId !== undefined && !to.laneId)
+      await this.bridge.request({ op: 'reloadTab', tabId: to.tabId }).catch(() => undefined);
   }
 }

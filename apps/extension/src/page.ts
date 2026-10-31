@@ -13,9 +13,24 @@ let marked = new Map<number, HTMLElement>();
 let cursorPos = { x: -40, y: -40 };
 
 export const INTERACTIVE = [
-  'a[href]', 'button', 'input:not([type=hidden])', 'select', 'textarea', 'summary',
-  '[role=button]', '[role=link]', '[role=tab]', '[role=checkbox]', '[role=radio]', '[role=menuitem]',
-  '[role=option]', '[role=textbox]', '[role=combobox]', '[role=switch]', '[contenteditable=""]', '[contenteditable=true]',
+  'a[href]',
+  'button',
+  'input:not([type=hidden])',
+  'select',
+  'textarea',
+  'summary',
+  '[role=button]',
+  '[role=link]',
+  '[role=tab]',
+  '[role=checkbox]',
+  '[role=radio]',
+  '[role=menuitem]',
+  '[role=option]',
+  '[role=textbox]',
+  '[role=combobox]',
+  '[role=switch]',
+  '[contenteditable=""]',
+  '[contenteditable=true]',
 ].join(',');
 
 const CURSOR_SVG = (color: string) => `
@@ -133,7 +148,8 @@ export function clickPulse() {
 
 // ── Element list ─────────────────────────────────────────────────────────
 
-const inViewport = (r: DOMRect) => !(r.bottom < 0 || r.right < 0 || r.top > window.innerHeight || r.left > window.innerWidth);
+const inViewport = (r: DOMRect) =>
+  !(r.bottom < 0 || r.right < 0 || r.top > window.innerHeight || r.left > window.innerWidth);
 
 // Rendered and usable, whether or not it is scrolled into view right now.
 function visible(el: HTMLElement, r: DOMRect): boolean {
@@ -151,11 +167,19 @@ function labelOf(el: HTMLElement): string {
   if (aria) return aria;
   const labelledby = el.getAttribute('aria-labelledby');
   if (labelledby) {
-    const t = labelledby.split(/\s+/).map((id) => document.getElementById(id)?.innerText ?? '').join(' ').trim();
+    const t = labelledby
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.innerText ?? '')
+      .join(' ')
+      .trim();
     if (t) return t;
   }
   const labels = (el as HTMLInputElement).labels;
-  if (labels?.length) return [...labels].map((l) => l.innerText).join(' ').trim();
+  if (labels?.length)
+    return [...labels]
+      .map((l) => l.innerText)
+      .join(' ')
+      .trim();
   return '';
 }
 
@@ -164,7 +188,9 @@ export function nameOf(el: HTMLElement): string {
   const text =
     labelOf(el) ||
     (tag === 'input' || tag === 'textarea' ? (el as HTMLInputElement).placeholder : '') ||
-    (tag === 'input' && ['submit', 'button'].includes((el as HTMLInputElement).type) ? (el as HTMLInputElement).value : '') ||
+    (tag === 'input' && ['submit', 'button'].includes((el as HTMLInputElement).type)
+      ? (el as HTMLInputElement).value
+      : '') ||
     el.innerText ||
     el.getAttribute('title') ||
     el.querySelector('img')?.alt ||
@@ -235,13 +261,19 @@ function hiddenText(): CollectResult['hidden'] {
     for (const attr of el.attributes) {
       if (/^(data-|aria-description|title$|alt$)/.test(attr.name)) push('attribute', attr.value);
     }
-    const own = [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.nodeValue ?? '').join(' ');
+    const own = [...el.childNodes]
+      .filter((n) => n.nodeType === Node.TEXT_NODE)
+      .map((n) => n.nodeValue ?? '')
+      .join(' ');
     if (own.trim().length < 12) continue;
     const r = el.getBoundingClientRect();
     const s = getComputedStyle(el);
     const invisible =
       !el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) ||
-      r.width < 2 || r.height < 2 || r.right < 0 || r.bottom < -window.scrollY ||
+      r.width < 2 ||
+      r.height < 2 ||
+      r.right < 0 ||
+      r.bottom < -window.scrollY ||
       parseFloat(s.fontSize) < 4 ||
       s.color === s.backgroundColor ||
       (s.clip && s.clip !== 'auto');
@@ -270,7 +302,12 @@ export function collect(showMarks: boolean): CollectResult {
     let value: string | undefined;
     // Never report what is in a blocked field.
     if (select) value = select.selectedOptions[0]?.text ?? '';
-    else if (['input', 'textarea'].includes(tag) && !blocked && !['checkbox', 'radio', 'submit', 'button'].includes(i.type)) value = String(i.value).slice(0, 4000);
+    else if (
+      ['input', 'textarea'].includes(tag) &&
+      !blocked &&
+      !['checkbox', 'radio', 'submit', 'button'].includes(i.type)
+    )
+      value = String(i.value).slice(0, 4000);
     else if (['checkbox', 'radio'].includes(i.type)) value = i.checked ? 'checked' : 'unchecked';
     elements.push({
       mark,
@@ -283,7 +320,10 @@ export function collect(showMarks: boolean): CollectResult {
       rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
       blocked: blocked ? true : undefined,
       offscreen: inViewport(r) ? undefined : true,
-      hints: [el.getAttribute('name'), el.id, el.getAttribute('autocomplete'), i.placeholder, el.getAttribute('type')].filter(Boolean).join(' ') || undefined,
+      hints:
+        [el.getAttribute('name'), el.id, el.getAttribute('autocomplete'), i.placeholder, el.getAttribute('type')]
+          .filter(Boolean)
+          .join(' ') || undefined,
       form: ['input', 'button', 'select', 'textarea'].includes(tag) ? formOf(el) : undefined,
       options: select ? [...select.options].map((o) => o.text).slice(0, 40) : undefined,
     });
@@ -308,7 +348,10 @@ export function chooseOption(mark: number, option: string): string {
   const opt =
     [...el.options].find((o) => o.text.trim().toLowerCase() === want || o.value.toLowerCase() === want) ??
     [...el.options].find((o) => o.text.toLowerCase().includes(want));
-  if (!opt) throw new Error(`no option “${option}” in ${nameOf(el)} (options: ${[...el.options].map((o) => o.text).join(', ')})`);
+  if (!opt)
+    throw new Error(
+      `no option “${option}” in ${nameOf(el)} (options: ${[...el.options].map((o) => o.text).join(', ')})`,
+    );
   el.value = opt.value;
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -323,7 +366,12 @@ function drawMarks() {
     if (!inViewport(r)) continue; // only what the screenshot can show
     const box = document.createElement('div');
     box.className = 'box';
-    Object.assign(box.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+    Object.assign(box.style, {
+      left: `${r.left}px`,
+      top: `${r.top}px`,
+      width: `${r.width}px`,
+      height: `${r.height}px`,
+    });
     const tag = document.createElement('div');
     tag.className = 'mark';
     tag.textContent = String(mark);
@@ -332,7 +380,12 @@ function drawMarks() {
   }
 }
 
-export async function target(msg: { mark?: number; x?: number; y?: number; forTyping?: boolean }): Promise<TargetResult> {
+export async function target(msg: {
+  mark?: number;
+  x?: number;
+  y?: number;
+  forTyping?: boolean;
+}): Promise<TargetResult> {
   if (msg.mark === undefined) return { x: msg.x ?? 0, y: msg.y ?? 0, name: `point ${msg.x},${msg.y}` };
   const el = marked.get(msg.mark);
   if (!el || !el.isConnected) throw new Error(`mark ${msg.mark} is not on the page any more; look again`);
@@ -370,9 +423,12 @@ export async function fillCells(mark: number, rows: string[][]): Promise<number>
   let filled = 0;
   for (const [i, row] of rows.entries()) {
     const tr = table.rows[r0 + i];
-    if (!tr) throw new Error(`the sheet has only ${table.rows.length - r0} rows from this cell; ${rows.length} were needed`);
+    if (!tr)
+      throw new Error(`the sheet has only ${table.rows.length - r0} rows from this cell; ${rows.length} were needed`);
     for (const [j, value] of row.entries()) {
-      const field = tr.cells[c0 + j]?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:not([type=hidden]),textarea');
+      const field = tr.cells[c0 + j]?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+        'input:not([type=hidden]),textarea',
+      );
       if (!field) throw new Error(`no field at row ${i + 1}, column ${j + 1} of the block`);
       if (blockedReason(field)) throw new Error('blocked field: Baton never types into password or payment fields');
       setValue(field, value);
@@ -462,7 +518,12 @@ document.addEventListener(
     if (!recording || lane || !(e.target instanceof globalThis.Element)) return;
     const el = e.target.closest<HTMLElement>(INTERACTIVE);
     if (!el) return;
-    report({ type: 'click', role: roleOf(el), name: nameOf(el), href: el instanceof HTMLAnchorElement ? el.href : undefined });
+    report({
+      type: 'click',
+      role: roleOf(el),
+      name: nameOf(el),
+      href: el instanceof HTMLAnchorElement ? el.href : undefined,
+    });
   },
   true,
 );
@@ -471,9 +532,15 @@ document.addEventListener(
   'change',
   (e) => {
     const el = e.target;
-    if (!recording || lane || !(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)) return;
+    if (
+      !recording ||
+      lane ||
+      !(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)
+    )
+      return;
     if (el instanceof HTMLInputElement && ['checkbox', 'radio', 'submit', 'button', 'hidden'].includes(el.type)) return;
-    const kind = el instanceof HTMLSelectElement ? 'select-one' : el instanceof HTMLTextAreaElement ? 'textarea' : el.type;
+    const kind =
+      el instanceof HTMLSelectElement ? 'select-one' : el instanceof HTMLTextAreaElement ? 'textarea' : el.type;
     // Rule 2 applies to recordings too: a blocked field's value never leaves the page.
     if (blockedReason(el)) return report({ type: 'input', field: nameOf(el), kind, blocked: true });
     const value = el instanceof HTMLSelectElement ? (el.selectedOptions[0]?.text ?? el.value) : el.value;

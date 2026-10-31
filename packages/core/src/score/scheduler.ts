@@ -24,7 +24,9 @@ export function goalWithInputs(part: Part, inputs: Record<string, PartResult>, s
     .map((d) => {
       const r = inputs[d];
       const name = score.parts.find((p) => p.id === d)?.name ?? d;
-      return r ? `- ${name}: ${r.result}${r.data === undefined ? '' : ` (${JSON.stringify(r.data).slice(0, 600)})`}` : '';
+      return r
+        ? `- ${name}: ${r.result}${r.data === undefined ? '' : ` (${JSON.stringify(r.data).slice(0, 600)})`}`
+        : '';
     })
     .filter(Boolean);
   return lines.length ? `${part.goal}\n\nResults from earlier parts:\n${lines.join('\n')}` : part.goal;
@@ -54,7 +56,10 @@ export async function runScore(score: Score, opts: RunOptions): Promise<Record<s
           const bad = p.dependsOn.find((d) => results[d] && results[d]!.status !== 'done');
           if (bad) {
             pending.delete(p.id);
-            settle(p.id, { status: 'skipped', result: `Skipped: “${score.parts.find((x) => x.id === bad)?.name ?? bad}” did not finish.` });
+            settle(p.id, {
+              status: 'skipped',
+              result: `Skipped: “${score.parts.find((x) => x.id === bad)?.name ?? bad}” did not finish.`,
+            });
             skipped = true;
           }
         }
@@ -85,5 +90,7 @@ export type PartPhase = 'waiting' | 'running' | 'waiting-approval' | 'settled';
 export function readyForApprovals(parts: Array<{ id: string; dependsOn: string[]; phase: PartPhase }>): boolean {
   const phase = new Map(parts.map((p) => [p.id, p.phase]));
   if (!parts.some((p) => p.phase === 'waiting-approval')) return false;
-  return !parts.some((p) => p.phase === 'running' || (p.phase === 'waiting' && p.dependsOn.every((d) => phase.get(d) === 'settled')));
+  return !parts.some(
+    (p) => p.phase === 'running' || (p.phase === 'waiting' && p.dependsOn.every((d) => phase.get(d) === 'settled')),
+  );
 }

@@ -15,6 +15,8 @@ const api = {
   stopAll: () => ipcRenderer.invoke('lanes:stopAll'),
   saveProfile: (p: unknown) => ipcRenderer.invoke('profile:save', p),
   getBudget: () => ipcRenderer.invoke('budget:get'),
+  listNotes: () => ipcRenderer.invoke('notes:list'),
+  removeNote: (id: number) => ipcRenderer.invoke('notes:remove', id),
   onAnchors: on('anchors'),
   onSpeak: on('speak'),
   listScores: () => ipcRenderer.invoke('score:list'),
@@ -26,7 +28,8 @@ const api = {
   runSelfTest: () => ipcRenderer.invoke('selftest:run'),
   sendCue: (wav: Uint8Array, seconds: number) => ipcRenderer.invoke('cue:audio', wav, seconds),
   setTalkKey: (key: string) => ipcRenderer.invoke('settings:talkKey', key),
-  reportMic: (openMs: number | null, seconds: number, timing: string) => ipcRenderer.send('mic:timing', openMs, seconds, timing),
+  reportMic: (openMs: number | null, seconds: number, timing: string) =>
+    ipcRenderer.send('mic:timing', openMs, seconds, timing),
   onTalkKey: on('talkKey'),
   onExtension: on('extension'),
   onPtt: on('ptt'),

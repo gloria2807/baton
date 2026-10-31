@@ -3,10 +3,21 @@ import { readyForApprovals, runScore, type PartPhase, type PartResult, type Part
 import { Score, levels } from './score.js';
 import { grid, tile } from './tiling.js';
 
-const part = (id: string, dependsOn: string[] = [], extra = {}) => ({ id, name: id, goal: `do ${id}`, startUrl: 'http://localhost:4400/', dependsOn, ...extra });
+const part = (id: string, dependsOn: string[] = [], extra = {}) => ({
+  id,
+  name: id,
+  goal: `do ${id}`,
+  startUrl: 'http://localhost:4400/',
+  dependsOn,
+  ...extra,
+});
 
 // "Get me there": four independent parts, as in the film.
-const GET_ME_THERE = { title: 'Get to Atlas Summit', parts: [part('flights'), part('hotel'), part('calendar'), part('reply')], final: 'Merge.' };
+const GET_ME_THERE = {
+  title: 'Get to Atlas Summit',
+  parts: [part('flights'), part('hotel'), part('calendar'), part('reply')],
+  final: 'Merge.',
+};
 
 describe('Score validation', () => {
   it('accepts a valid graph and fills defaults', () => {
@@ -16,7 +27,11 @@ describe('Score validation', () => {
   });
 
   it('orders dependent parts into waves', () => {
-    expect(levels([part('find'), part('book', ['find']), part('tell', ['book', 'find']), part('note')])).toEqual([['find', 'note'], ['book'], ['tell']]);
+    expect(levels([part('find'), part('book', ['find']), part('tell', ['book', 'find']), part('note')])).toEqual([
+      ['find', 'note'],
+      ['book'],
+      ['tell'],
+    ]);
   });
 
   it('rejects duplicates, unknown dependencies, cycles and too many lanes', () => {
@@ -88,7 +103,8 @@ describe('scheduler', () => {
     const s = Score.parse({ parts: [part('a'), part('b', ['a']), part('c', ['b']), part('d')] });
     const results = await runScore(s, {
       onUpdate: (u) => updates.push(u),
-      runPart: async (p): Promise<PartResult> => (p.id === 'a' ? { status: 'failed', result: 'site down' } : { status: 'done', result: 'ok' }),
+      runPart: async (p): Promise<PartResult> =>
+        p.id === 'a' ? { status: 'failed', result: 'site down' } : { status: 'done', result: 'ok' },
     });
     expect(results.a!.status).toBe('failed');
     expect(results.b!.status).toBe('skipped');
@@ -158,7 +174,9 @@ describe('readyForApprovals', () => {
     expect(readyForApprovals([p('flights', 'waiting-approval'), p('calendar', 'waiting', ['flights'])])).toBe(true);
   });
   it('is held back by a part that is about to start', () => {
-    expect(readyForApprovals([p('flights', 'waiting-approval'), p('hotel', 'settled'), p('calendar', 'waiting', ['hotel'])])).toBe(false);
+    expect(
+      readyForApprovals([p('flights', 'waiting-approval'), p('hotel', 'settled'), p('calendar', 'waiting', ['hotel'])]),
+    ).toBe(false);
   });
   it('needs something to approve', () => {
     expect(readyForApprovals([p('a', 'settled')])).toBe(false);

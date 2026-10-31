@@ -36,7 +36,12 @@ export class Recorder {
   private resumedAt = 0;
   private onAudio: (() => void) | null = null;
   // Voice processing costs only ≈50 ms to start (measured) and helps transcription, so it stays on.
-  private constraints: MediaTrackConstraints = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  private constraints: MediaTrackConstraints = {
+    channelCount: 1,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
 
   // Build the audio graph ahead of time. Safe to call more than once.
   warm(): Promise<Graph> {

@@ -26,7 +26,11 @@ export function ProfileForm({ initial }: { initial: Record<string, string> }) {
         {FIELDS.map(([key, label, placeholder]) => (
           <label key={key}>
             <span>{label}</span>
-            <input value={p[key] ?? ''} placeholder={placeholder} onChange={(e) => setP({ ...p, [key]: e.target.value })} />
+            <input
+              value={p[key] ?? ''}
+              placeholder={placeholder}
+              onChange={(e) => setP({ ...p, [key]: e.target.value })}
+            />
           </label>
         ))}
       </div>

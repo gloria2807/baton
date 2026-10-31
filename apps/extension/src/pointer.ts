@@ -45,7 +45,12 @@ function drawPin(n: number, point: { x: number; y: number }, rect: Rect) {
   const l = ensureLayer();
   const outline = document.createElement('div');
   outline.className = 'outline';
-  Object.assign(outline.style, { left: `${rect.x - 4}px`, top: `${rect.y - 4}px`, width: `${rect.w + 8}px`, height: `${rect.h + 8}px` });
+  Object.assign(outline.style, {
+    left: `${rect.x - 4}px`,
+    top: `${rect.y - 4}px`,
+    width: `${rect.w + 8}px`,
+    height: `${rect.h + 8}px`,
+  });
   const pin = document.createElement('div');
   pin.className = 'pin';
   pin.textContent = String(n);
@@ -67,8 +72,15 @@ function clearPins(afterMs: number) {
 const text = (el: Element) => ((el as HTMLElement).innerText ?? el.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim();
 
 function cellText(cell: HTMLTableCellElement): string {
-  const field = cell.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input:not([type=hidden]),textarea,select');
-  if (field) return field instanceof HTMLSelectElement ? (field.selectedOptions[0]?.text ?? '') : field.type === 'password' ? '' : field.value;
+  const field = cell.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    'input:not([type=hidden]),textarea,select',
+  );
+  if (field)
+    return field instanceof HTMLSelectElement
+      ? (field.selectedOptions[0]?.text ?? '')
+      : field.type === 'password'
+        ? ''
+        : field.value;
   return text(cell).replace(/\s+/g, ' ');
 }
 
@@ -89,14 +101,33 @@ function roleOf(el: Element): string {
   const explicit = el.getAttribute('role');
   if (explicit) return explicit;
   const tag = el.tagName.toLowerCase();
-  return ({ a: 'link', button: 'button', img: 'image', table: 'table', tr: 'row', li: 'listitem', article: 'article', input: 'textbox', textarea: 'textbox', h1: 'heading', h2: 'heading', h3: 'heading' } as Record<string, string>)[tag] ?? tag;
+  return (
+    (
+      {
+        a: 'link',
+        button: 'button',
+        img: 'image',
+        table: 'table',
+        tr: 'row',
+        li: 'listitem',
+        article: 'article',
+        input: 'textbox',
+        textarea: 'textbox',
+        h1: 'heading',
+        h2: 'heading',
+        h3: 'heading',
+      } as Record<string, string>
+    )[tag] ?? tag
+  );
 }
 
-const BLOCKS = 'a,button,img,input,textarea,select,li,tr,article,section,figure,[role=listitem],[role=article],[role=row]';
+const BLOCKS =
+  'a,button,img,input,textarea,select,li,tr,article,section,figure,[role=listitem],[role=article],[role=row]';
 
 export function targetAt(x: number, y: number): { el: Element; target: AnchorTarget } | null {
   const hit = document.elementFromPoint(x, y);
-  if (!hit || hit === document.documentElement || hit === document.body || hit.closest('baton-anchors,baton-lane')) return null;
+  if (!hit || hit === document.documentElement || hit === document.body || hit.closest('baton-anchors,baton-lane'))
+    return null;
 
   const table = hit.closest('table');
   if (table) {
@@ -108,8 +139,15 @@ export function targetAt(x: number, y: number): { el: Element; target: AnchorTar
         tag: 'table',
         role: 'table',
         label: table.getAttribute('aria-label') || table.caption?.innerText || nearbyHeading(table),
-        text: rows.map((r) => r.join('\t')).join('\n').slice(0, 4000),
-        table: { rows, editable: !!table.querySelector('input:not([type=hidden]),textarea,[contenteditable=true]'), pointedRow: tr ? tr.rowIndex : undefined },
+        text: rows
+          .map((r) => r.join('\t'))
+          .join('\n')
+          .slice(0, 4000),
+        table: {
+          rows,
+          editable: !!table.querySelector('input:not([type=hidden]),textarea,[contenteditable=true]'),
+          pointedRow: tr ? tr.rowIndex : undefined,
+        },
       },
     };
   }
@@ -139,7 +177,7 @@ export function targetAt(x: number, y: number): { el: Element; target: AnchorTar
     target: {
       tag: el.tagName.toLowerCase(),
       role: roleOf(el),
-      label: (heading ? text(heading) : text(el).split('\n')[0] ?? '').slice(0, 200) || (img?.alt ?? ''),
+      label: (heading ? text(heading) : (text(el).split('\n')[0] ?? '')).slice(0, 200) || (img?.alt ?? ''),
       text: text(el).slice(0, 4000),
       href: link?.href,
       image: img ? { src: img.currentSrc.slice(0, 500), alt: img.alt.slice(0, 300) } : undefined,

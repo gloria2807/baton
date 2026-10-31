@@ -51,7 +51,11 @@ const systemClock: Clock = {
   clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
 };
 
-type State = { kind: 'idle' } | { kind: 'pending'; since: number; timer: unknown } | { kind: 'listening'; since: number } | { kind: 'spoiled' };
+type State =
+  | { kind: 'idle' }
+  | { kind: 'pending'; since: number; timer: unknown }
+  | { kind: 'listening'; since: number }
+  | { kind: 'spoiled' };
 
 export class TalkKeyGesture {
   private state: State = { kind: 'idle' };

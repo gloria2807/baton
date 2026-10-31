@@ -1,7 +1,15 @@
 // The conductor's side of one extension connection, independent of any socket library: it checks
 // the pairing handshake, sends commands, matches results to requests and times them out.
 
-import { Command, FromExtension, PROTOCOL_VERSION, parseFrame, type CommandInput, type LaneEvent, type ToExtension } from './bridge.js';
+import {
+  Command,
+  FromExtension,
+  PROTOCOL_VERSION,
+  parseFrame,
+  type CommandInput,
+  type LaneEvent,
+  type ToExtension,
+} from './bridge.js';
 import { tokensMatch } from './pairing.js';
 
 export interface Transport {
@@ -27,7 +35,11 @@ export class BridgeSession {
   constructor(
     private readonly transport: Transport,
     private readonly token: string,
-    private readonly hooks: { onPaired?: (extensionVersion: string) => void; onEvent?: (e: LaneEvent) => void; onLog?: (m: string) => void } = {},
+    private readonly hooks: {
+      onPaired?: (extensionVersion: string) => void;
+      onEvent?: (e: LaneEvent) => void;
+      onLog?: (m: string) => void;
+    } = {},
     helloTimeoutMs = 5000,
   ) {
     this.helloTimer = setTimeout(() => this.reject('no hello'), helloTimeoutMs);

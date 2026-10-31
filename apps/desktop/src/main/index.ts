@@ -1,7 +1,18 @@
 // Baton's main process: tray, Podium window, bridge to the extension, push-to-talk and the
 // model client. The Baseten key is read here and never leaves this process.
 
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, powerMonitor, screen, session, Tray } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  Menu,
+  nativeImage,
+  powerMonitor,
+  screen,
+  session,
+  Tray,
+} from 'electron';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LookResult, RecordedStep, TALK_KEYS, isTalkKeyId, type Anchor, type TalkKeyId } from '@baton/core';
@@ -10,8 +21,10 @@ import { Governor, Model, type SpendState } from '@baton/model';
 import { iconPng } from '../../../../scripts/icon.mjs';
 import { runBench } from './bench';
 import { runMultiBench } from './bench-multi';
+import { runRealBench } from './bench-real';
 import { BridgeServer } from './bridge-server';
 import { Conductor, type CardAnswer } from './conductor';
+import { listNotes, removeNote } from './site-notes';
 import { CueSession } from './cue';
 import { openScoreView, registerScoreView, snapshotScoreView } from './score-view';
 import { log } from './log';
@@ -83,7 +96,13 @@ function createPodium() {
     hasShadow: false,
     show: false,
     // The Podium resumes its audio graph from a global key press, which is not a page gesture.
-    webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, autoplayPolicy: 'no-user-gesture-required' },
+    webPreferences: {
+      preload: join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      autoplayPolicy: 'no-user-gesture-required',
+    },
   });
   podium.setAlwaysOnTop(true, 'screen-saver');
   podium.setVisibleOnAllWorkspaces(true);
@@ -104,7 +123,12 @@ function refreshTray() {
       { label: 'Show Podium', click: () => podium?.showInactive() },
       {
         label: 'Talk key',
-        submenu: talkKeyOptions().map((o) => ({ label: o.label, type: 'radio' as const, checked: o.id === settings.talkKey, click: () => setTalkKey(o.id as TalkKeyId) })),
+        submenu: talkKeyOptions().map((o) => ({
+          label: o.label,
+          type: 'radio' as const,
+          checked: o.id === settings.talkKey,
+          click: () => setTalkKey(o.id as TalkKeyId),
+        })),
       },
       { label: 'Pairing token', click: () => send('podium:showPairing', null) },
       { label: 'Copy pairing token', click: () => clipboard.writeText(token) },
@@ -155,14 +179,26 @@ async function handleCue(wav: Uint8Array, seconds: number) {
   try {
     const r = await model.transcribeCue(wav);
     log(`cue heard in ${Math.round(r.ms)} ms`);
-    send('cue', { phase: 'heard', transcript: r.value.transcript, intent: r.value.intent, ms: Math.round(r.ms), file } satisfies CueUpdate);
+    send('cue', {
+      phase: 'heard',
+      transcript: r.value.transcript,
+      intent: r.value.intent,
+      ms: Math.round(r.ms),
+      file,
+    } satisfies CueUpdate);
     const said = r.value.transcript.trim();
     const cue = spokenCue;
     spokenCue = null;
     // A waiting card (approval, question) takes the answer; otherwise the cue is interpreted.
     const anchors = cue ? await cue.anchors : [];
     if (said && !conductor.answerByVoice(said, anchors.length > 0))
-      void conductor.fromCue({ id: cue?.id ?? `cue-${Date.now().toString(36)}`, transcript: said, intent: r.value.intent, anchors, heldMs: cue?.heldMs ?? seconds * 1000 });
+      void conductor.fromCue({
+        id: cue?.id ?? `cue-${Date.now().toString(36)}`,
+        transcript: said,
+        intent: r.value.intent,
+        anchors,
+        heldMs: cue?.heldMs ?? seconds * 1000,
+      });
   } catch (e) {
     send('cue', { phase: 'error', error: (e as Error).message, file } satisfies CueUpdate);
   }
@@ -178,6 +214,7 @@ app.whenReady().then(async () => {
     const governor = new Governor({
       maxConcurrent: Number(process.env.BATON_MAX_CALLS ?? 3),
       dailyBudgetUsd: Number.isFinite(budget) && budget > 0 ? budget : 3,
+      totalBudgetUsd: process.env.BATON_TOTAL_BUDGET_USD ? Number(process.env.BATON_TOTAL_BUDGET_USD) : undefined,
       load: () => (existsSync(spendFile) ? (JSON.parse(readFileSync(spendFile, 'utf8')) as SpendState) : null),
       save: (s) => writeFileSync(spendFile, JSON.stringify(s)),
     });
@@ -200,15 +237,38 @@ app.whenReady().then(async () => {
   bridge.on('paired', () => send('extension', 'connected' satisfies ExtensionState));
   bridge.on('unpaired', () => send('extension', 'waiting' satisfies ExtensionState));
   // Read on every cue, so edits (or a demo reset) take effect at once.
-  conductor = new Conductor(bridge, () => model, send, () => (profile = loadProfile()));
+  conductor = new Conductor(
+    bridge,
+    () => model,
+    send,
+    () => (profile = loadProfile()),
+  );
   bridge.on('laneEvent', (e) => {
     if (e.kind === 'anchor') cueSession?.addChrome(e.cueId, e.anchor);
     else if (e.kind === 'recorded') conductor.addRehearsalStep(e.step);
   });
 
-  ipcMain.handle('podium:init', () => ({ extension: extensionState(), token, hasModel: !!model, talkKey: settings.talkKey, talkKeys: talkKeyOptions(), profile }));
+  ipcMain.handle('podium:init', () => ({
+    extension: extensionState(),
+    token,
+    hasModel: !!model,
+    talkKey: settings.talkKey,
+    talkKeys: talkKeyOptions(),
+    profile,
+  }));
   ipcMain.handle('profile:save', (_e, p: unknown) => (profile = saveProfile(p)));
-  ipcMain.handle('budget:get', () => (model?.governor ? { spent: model.governor.spentToday, budget: model.governor.budget } : null));
+  ipcMain.handle('notes:list', () => listNotes());
+  ipcMain.handle('notes:remove', (_e, id: unknown) => removeNote(Number(id)));
+  ipcMain.handle('budget:get', () =>
+    model?.governor
+      ? {
+          spent: model.governor.spentToday,
+          budget: model.governor.budget,
+          total: model.governor.spentTotal,
+          totalBudget: model.governor.totalBudget,
+        }
+      : null,
+  );
   ipcMain.handle('settings:talkKey', (_e, key: unknown) => {
     if (isTalkKeyId(key)) setTalkKey(key);
     return settings.talkKey;
@@ -217,7 +277,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('podium:resize', (_e, height: unknown) => {
     if (!podium || typeof height !== 'number') return;
     const [x, y] = podium.getPosition() as [number, number];
-    podium.setBounds({ x, y, width: PODIUM.width, height: Math.round(Math.min(PODIUM.max, Math.max(PODIUM.collapsed, height))) });
+    podium.setBounds({
+      x,
+      y,
+      width: PODIUM.width,
+      height: Math.round(Math.min(PODIUM.max, Math.max(PODIUM.collapsed, height))),
+    });
   });
   ipcMain.handle('card:answer', (_e, id: unknown, answer: unknown) => {
     if (typeof id === 'number' && answer && typeof answer === 'object') conductor.answer(id, answer as CardAnswer);
@@ -228,7 +293,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('pairing:copy', () => clipboard.writeText(token));
   ipcMain.on('mic:timing', (_e, openMs: unknown, seconds: unknown, timing: unknown) => {
     if (typeof seconds === 'number')
-      log(`microphone: first audio ${typeof openMs === 'number' ? `${openMs} ms` : 'never'} after start (${String(timing).slice(0, 80)}), ${seconds.toFixed(2)} s recorded`);
+      log(
+        `microphone: first audio ${typeof openMs === 'number' ? `${openMs} ms` : 'never'} after start (${String(timing).slice(0, 80)}), ${seconds.toFixed(2)} s recorded`,
+      );
   });
   ipcMain.handle('selftest:run', () => runSelfTest());
   ipcMain.handle('cue:audio', (_e, wav: Uint8Array, seconds: number) => void handleCue(wav, seconds));
@@ -240,7 +307,11 @@ app.whenReady().then(async () => {
     send('ptt', e);
     // Anchors are collected while the key is held; they travel with the cue's audio.
     if (e.type === 'start') {
-      cueSession = new CueSession(bridge, () => podium, (list) => send('anchors', list));
+      cueSession = new CueSession(
+        bridge,
+        () => podium,
+        (list) => send('anchors', list),
+      );
       send('anchors', []);
     } else if (cueSession) {
       const s = cueSession;
@@ -285,14 +356,47 @@ function handleArgs(argv: string[]) {
   const probe = arg('probe');
   if (probe)
     void whenPaired(async () => {
-      await bridge.request({ op: 'openLane', laneId: 'probe', url: probe, color: '#eab308', title: 'Probe', bounds: conductor.laneBounds() }, 30000);
-      const look = async () => LookResult.parse(await bridge.request({ op: 'look', laneId: 'probe', screenshot: false }, 30000));
+      await bridge.request(
+        {
+          op: 'openLane',
+          laneId: 'probe',
+          url: probe,
+          color: '#eab308',
+          title: 'Probe',
+          bounds: conductor.laneBounds(),
+        },
+        30000,
+      );
+      const look = async () =>
+        LookResult.parse(await bridge.request({ op: 'look', laneId: 'probe', screenshot: false }, 30000));
       const field = (await look()).elements.find((e) => e.role === 'textbox' && !e.blocked);
       if (!field) return log('PROBE no text field');
-      const typed = await bridge.request({ op: 'type', laneId: 'probe', mark: field.mark, text: 'Ama Owusu', submit: false }, 20000).catch((e) => `error ${(e as Error).message}`);
+      const typed = await bridge
+        .request({ op: 'type', laneId: 'probe', mark: field.mark, text: 'Ama Owusu', submit: false }, 20000)
+        .catch((e) => `error ${(e as Error).message}`);
       const after = (await look()).elements.find((e) => e.name === field.name);
-      log(`PROBE field “${field.name}” (autocomplete hints: ${field.hints ?? '-'}) type → ${JSON.stringify(typed)}; now holds “${after?.value ?? '?'}”`);
+      log(
+        `PROBE field “${field.name}” (autocomplete hints: ${field.hints ?? '-'}) type → ${JSON.stringify(typed)}; now holds “${after?.value ?? '?'}”`,
+      );
     }, 'PROBE');
+
+  // --tidy-check=<url>,<url>: open each page in a lane window and report what Baton cleared out of
+  // the way (consent banners, pop-ups) or found (bot checks). No model calls.
+  const tidyCheck = arg('tidy-check');
+  if (tidyCheck)
+    void whenPaired(async () => {
+      for (const url of tidyCheck.split(',')) {
+        await bridge.request({ op: 'openLane', laneId: 'tidy', url, color: '#7c8a9e', title: 'Tidy check', bounds: conductor.laneBounds() }, 30000);
+        const t0 = Date.now();
+        const l = LookResult.parse(await bridge.request({ op: 'look', laneId: 'tidy', screenshot: false }, 45000));
+        const again = LookResult.parse(await bridge.request({ op: 'look', laneId: 'tidy', screenshot: false }, 45000));
+        log(
+          `TIDY ${new URL(url).host}: cleared [${l.tidied.join(' | ') || 'nothing'}]; consent left ${JSON.stringify(again.consent ?? null)}; blocker ${again.blocker?.text ?? 'none'}; ${again.elements.length} elements; ${Date.now() - t0} ms`,
+        );
+        await bridge.request({ op: 'closeLane', laneId: 'tidy' }).catch(() => undefined);
+      }
+      log('TIDY_DONE');
+    }, 'TIDY');
 
   // --cue="Get me there" [--anchor-url=…]: a typed cue, as if spoken while pointing at that page.
   const typed = arg('cue');
@@ -302,20 +406,50 @@ function handleArgs(argv: string[]) {
       const anchors: Anchor[] = [];
       if (url) {
         const html = await (await fetch(url)).text();
-        const text = html.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, '\n').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\n\s*\n+/g, '\n').trim();
+        const text = html
+          .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+          .replace(/<[^>]+>/g, '\n')
+          .replace(/&amp;/g, '&')
+          .replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"')
+          .replace(/\n\s*\n+/g, '\n')
+          .trim();
         const title = html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? url;
-        anchors.push({ n: 1, at: 300, source: 'chrome', url, title, laneId: arg('lane'), point: { x: 400, y: 300 }, target: { tag: 'article', role: 'article', label: title, text: text.slice(0, 4000) } });
+        anchors.push({
+          n: 1,
+          at: 300,
+          source: 'chrome',
+          url,
+          title,
+          laneId: arg('lane'),
+          point: { x: 400, y: 300 },
+          target: { tag: 'article', role: 'article', label: title, text: text.slice(0, 4000) },
+        });
       }
-      await conductor.fromCue({ id: `cue-${Date.now().toString(36)}`, transcript: typed, intent: '', anchors, heldMs: 2000 });
+      await conductor.fromCue({
+        id: `cue-${Date.now().toString(36)}`,
+        transcript: typed,
+        intent: '',
+        anchors,
+        heldMs: 2000,
+      });
     }, 'CUE');
 
-  if (argv.includes('--score-view')) void snapshotScoreView(join(__dirname, 'preload.cjs'), join(__dirname, 'renderer', 'index.html'), join(outDir('selftest'), 'score-view.png')).then(() => log('score view snapshot saved'));
+  if (argv.includes('--score-view'))
+    void snapshotScoreView(
+      join(__dirname, 'preload.cjs'),
+      join(__dirname, 'renderer', 'index.html'),
+      join(outDir('selftest'), 'score-view.png'),
+    ).then(() => log('score view snapshot saved'));
 
   // --rehearsal-file=<json with steps or rehearsals[0].steps>: learn a routine from a saved rehearsal.
   const rehearsalFile = arg('rehearsal-file');
   if (rehearsalFile)
     void (async () => {
-      const raw = JSON.parse(readFileSync(rehearsalFile, 'utf8')) as { steps?: unknown[]; rehearsals?: Array<{ steps: unknown[] }> };
+      const raw = JSON.parse(readFileSync(rehearsalFile, 'utf8')) as {
+        steps?: unknown[];
+        rehearsals?: Array<{ steps: unknown[] }>;
+      };
       const steps = (raw.steps ?? raw.rehearsals?.[0]?.steps ?? []).map((x) => RecordedStep.parse(x));
       await conductor.learnFrom(steps);
     })().catch((e) => log(`REHEARSAL failed: ${(e as Error).message}`));
@@ -328,10 +462,12 @@ function handleArgs(argv: string[]) {
     });
 
   // npm run demo:reset hands this over, to clear the Podium for a fresh take.
-  if (argv.includes('--demo-reset')) log(conductor.reset() ? 'podium reset for the demo' : 'demo reset skipped: lanes are running');
+  if (argv.includes('--demo-reset'))
+    log(conductor.reset() ? 'podium reset for the demo' : 'demo reset skipped: lanes are running');
 
   // Pick up a rebuilt extension.
-  if (argv.includes('--reload-extension')) void whenPaired(() => bridge.request({ op: 'reloadExtension' }), 'reload-extension');
+  if (argv.includes('--reload-extension'))
+    void whenPaired(() => bridge.request({ op: 'reloadExtension' }), 'reload-extension');
 
   // --task="goal" --url=https://… runs one supervised lane, for gate checks without speaking.
   const task = arg('task');
@@ -340,7 +476,11 @@ function handleArgs(argv: string[]) {
       () =>
         conductor
           .runOne({ name: arg('name') ?? 'Blue', goal: task, startUrl: arg('url') ?? 'https://www.google.com/' })
-          .then((out) => log(`TASK_RESULT ${JSON.stringify({ status: out.status, result: out.result, steps: out.steps, ms: out.ms, receipts: out.receipts })}`)),
+          .then((out) =>
+            log(
+              `TASK_RESULT ${JSON.stringify({ status: out.status, result: out.result, steps: out.steps, ms: out.ms, receipts: out.receipts })}`,
+            ),
+          ),
       'TASK',
     );
 
@@ -348,15 +488,36 @@ function handleArgs(argv: string[]) {
   const multi = argv.find((a) => a === '--bench-multi' || a.startsWith('--bench-multi='));
   if (multi)
     void whenPaired(
-      () => (model ? runMultiBench(bridge, model, multi.includes('=') ? multi.split('=')[1]!.split(',') : undefined) : Promise.reject(new Error('no Baseten key'))),
+      () =>
+        model
+          ? runMultiBench(bridge, model, multi.includes('=') ? multi.split('=')[1]!.split(',') : undefined)
+          : Promise.reject(new Error('no Baseten key')),
       'BENCH_MULTI',
+    );
+
+  // --bench-real[=id,id] and --bench-real-multi[=id,id], with --repeat=N: real websites in the person's Chrome.
+  const real = argv.find((a) => /^--bench-real(-multi)?(=|$)/.test(a));
+  if (real)
+    void whenPaired(
+      () =>
+        model
+          ? runRealBench(bridge, model, {
+              multi: real.startsWith('--bench-real-multi'),
+              only: real.includes('=') ? real.split('=')[1]!.split(',') : undefined,
+              repeat: Number(arg('repeat') ?? 1),
+            })
+          : Promise.reject(new Error('no Baseten key')),
+      'BENCH_REAL',
     );
 
   // --bench or --bench=id,id runs the benchmark unattended (no approvals beyond each task's own).
   const bench = argv.find((a) => a === '--bench' || a.startsWith('--bench='));
   if (bench)
     void whenPaired(
-      () => (model ? runBench(bridge, model, conductor, bench.includes('=') ? bench.split('=')[1]!.split(',') : undefined) : Promise.reject(new Error('no Baseten key'))),
+      () =>
+        model
+          ? runBench(bridge, model, conductor, bench.includes('=') ? bench.split('=')[1]!.split(',') : undefined)
+          : Promise.reject(new Error('no Baseten key')),
       'BENCH',
     );
 }

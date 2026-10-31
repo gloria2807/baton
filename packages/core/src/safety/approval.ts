@@ -1,7 +1,8 @@
 // Rule 1: nothing irreversible without a yes. Before a lane clicks or presses Enter, this decides —
 // with fixed rules, never a model — whether the action needs the person's approval.
 
-export type ApprovalCategory = 'pay' | 'book' | 'buy' | 'send' | 'post' | 'submit' | 'delete' | 'accept-terms' | 'settings';
+export type ApprovalCategory =
+  'pay' | 'book' | 'buy' | 'send' | 'post' | 'submit' | 'delete' | 'accept-terms' | 'settings';
 
 export interface TargetFacts {
   tag: string;
@@ -21,18 +22,28 @@ export type Gate = { kind: 'allow' } | { kind: 'approve'; category: ApprovalCate
 
 // Checked in this order; the first match decides the category.
 const WORDS: Array<[ApprovalCategory, RegExp]> = [
-  ['delete', /\b(delete|remove|trash|discard|erase|destroy|cancel (my |this |the )?(account|subscription|order|booking|reservation|plan)|unsubscribe|deactivate|close (my )?account)\b/i],
-  ['pay', /\b(pay|payment|checkout|check out|complete (purchase|order|payment)|place (your |my |the )?order|confirm (and )?pay|top up|transfer|donate)\b/i],
+  [
+    'delete',
+    /\b(delete|remove|trash|discard|erase|destroy|cancel (my |this |the )?(account|subscription|order|booking|reservation|plan)|unsubscribe|deactivate|close (my )?account)\b/i,
+  ],
+  [
+    'pay',
+    /\b(pay|payment|checkout|check out|complete (purchase|order|payment)|place (your |my |the )?order|confirm (and )?pay|top up|transfer|donate)\b/i,
+  ],
   ['book', /\b(book|reserve|confirm (booking|reservation)|complete booking)\b/i],
   ['buy', /\b(buy|purchase|order now|subscribe|upgrade|start (free )?trial)\b/i],
   ['send', /\b(send|submit (reply|message)|send (reply|message|email|invite|invitation)|invite)\b/i],
   ['post', /\b(post|publish|tweet|share( now)?|comment|reply all)\b/i],
   ['accept-terms', /\b(accept|agree|i agree|consent|allow all|accept all|accept cookies)\b/i],
-  ['settings', /\b(save (changes|settings|preferences)|update (settings|profile|password|email|account)|change (password|email)|apply settings)\b/i],
+  [
+    'settings',
+    /\b(save (changes|settings|preferences)|update (settings|profile|password|email|account)|change (password|email)|apply settings)\b/i,
+  ],
 ];
 
 // Clearly harmless actions even when they submit a form.
-const SAFE = /\b(search|find|filter|sort|next|previous|back|cancel|close|sign in|log in|login|continue reading|show more|load more|view|open|details)\b/i;
+const SAFE =
+  /\b(search|find|filter|sort|next|previous|back|cancel|close|sign in|log in|login|continue reading|show more|load more|view|open|details)\b/i;
 
 const VERB: Record<ApprovalCategory, string> = {
   pay: 'Pay',
@@ -79,10 +90,12 @@ export function gateClick(t: TargetFacts, page: PageFacts): Gate {
   const label = t.name.trim() || t.form?.submitLabel || '';
   // Links navigate; only links that destroy something need approval.
   if (isLink(t)) {
-    if (WORDS[0]![1].test(t.name)) return { kind: 'approve', category: 'delete', summary: summary('delete', t.name, page) };
+    if (WORDS[0]![1].test(t.name))
+      return { kind: 'approve', category: 'delete', summary: summary('delete', t.name, page) };
     return { kind: 'allow' };
   }
-  for (const [category, re] of WORDS) if (re.test(label)) return { kind: 'approve', category, summary: summary(category, label, page) };
+  for (const [category, re] of WORDS)
+    if (re.test(label)) return { kind: 'approve', category, summary: summary(category, label, page) };
   if (isSubmitControl(t)) return gateFormSubmit(t.form!, page, label);
   return { kind: 'allow' };
 }
@@ -91,7 +104,8 @@ export function gateClick(t: TargetFacts, page: PageFacts): Gate {
 export function gateEnter(t: TargetFacts, page: PageFacts): Gate {
   if (!t.form) return { kind: 'allow' };
   const label = t.form.submitLabel ?? '';
-  for (const [category, re] of WORDS) if (label && re.test(label)) return { kind: 'approve', category, summary: summary(category, label, page) };
+  for (const [category, re] of WORDS)
+    if (label && re.test(label)) return { kind: 'approve', category, summary: summary(category, label, page) };
   return gateFormSubmit(t.form, page, label || 'the form');
 }
 
@@ -116,9 +130,18 @@ export function isPreApproved(gate: Gate, page: PageFacts, pre?: PreApproval): b
 
 // "yes, book it" approves; "no", "stop", "don't" declines; anything else is not an answer.
 export function voiceAnswer(transcript: string): 'approved' | 'declined' | null {
-  const t = transcript.toLowerCase().replace(/[^a-z' ]/g, ' ').trim();
+  const t = transcript
+    .toLowerCase()
+    .replace(/[^a-z' ]/g, ' ')
+    .trim();
   if (!t) return null;
-  if (/\b(no|nope|don't|do not|stop|cancel|decline|wait|hold on|not now|never mind|nevermind)\b/.test(t)) return 'declined';
-  if (/\b(yes|yeah|yep|yup|sure|ok|okay|approve|approved|go ahead|do it|confirm|book it|pay|send it|go for it|please do)\b/.test(t)) return 'approved';
+  if (/\b(no|nope|don't|do not|stop|cancel|decline|wait|hold on|not now|never mind|nevermind)\b/.test(t))
+    return 'declined';
+  if (
+    /\b(yes|yeah|yep|yup|sure|ok|okay|approve|approved|go ahead|do it|confirm|book it|pay|send it|go for it|please do)\b/.test(
+      t,
+    )
+  )
+    return 'approved';
   return null;
 }

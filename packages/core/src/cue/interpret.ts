@@ -19,7 +19,13 @@ export const CueMove = z.union([
   // Something to do in the browser: one lane.
   z.object({ kind: z.literal('task'), name, goal: z.string().min(3).max(1500), startUrl: z.string().url() }),
   // "Put this there": copy what anchor `from` shows into the place anchor `to` shows.
-  z.object({ kind: z.literal('transfer'), name, from: z.coerce.number().int().positive(), to: z.coerce.number().int().positive(), instruction: z.string().max(400).default('') }),
+  z.object({
+    kind: z.literal('transfer'),
+    name,
+    from: z.coerce.number().int().positive(),
+    to: z.coerce.number().int().positive(),
+    instruction: z.string().max(400).default(''),
+  }),
   // Not enough to act on.
   z.object({ kind: z.literal('clarify'), question: z.string().min(1).max(300) }),
   // "Watch me": record what the person does next, to learn it as a routine.
@@ -74,7 +80,13 @@ function anchorBlock(a: Anchor): string {
   const t = a.target;
   if (!t) return head;
   const parts = [`Label: ${t.label}`];
-  if (t.table) parts.push(`Table${t.table.editable ? ' (editable sheet; cell values shown)' : ''}:\n${t.table.rows.slice(0, 30).map((r) => r.join('\t')).join('\n')}`);
+  if (t.table)
+    parts.push(
+      `Table${t.table.editable ? ' (editable sheet; cell values shown)' : ''}:\n${t.table.rows
+        .slice(0, 30)
+        .map((r) => r.join('\t'))
+        .join('\n')}`,
+    );
   else parts.push(`Text:\n${t.text.slice(0, 2500)}`);
   if (t.href) parts.push(`Link: ${t.href}`);
   if (t.image) parts.push(`Image: ${t.image.alt} (${t.image.src})`);

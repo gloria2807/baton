@@ -19,6 +19,7 @@ import { ModelBrain, type Model } from '@baton/model';
 import type { BridgeServer } from './bridge-server';
 import { log } from './log';
 import { receiptsDir } from './paths';
+import { addNote, listNotes } from './site-notes';
 
 export const PRICE = { inputPerM: 1.25, outputPerM: 4.25 };
 
@@ -32,7 +33,9 @@ export class BridgeHands implements Hands {
     private laneId: string,
   ) {}
   async look(screenshot: boolean) {
-    return LookResult.parse(await this.bridge.request({ op: 'look', laneId: this.laneId, screenshot, maxWidth: 1280 }, 30000));
+    return LookResult.parse(
+      await this.bridge.request({ op: 'look', laneId: this.laneId, screenshot, maxWidth: 1280 }, 30000),
+    );
   }
   async open(url: string) {
     await this.bridge.request({ op: 'navigate', laneId: this.laneId, url }, 30000);
@@ -58,6 +61,21 @@ export class BridgeHands implements Hands {
   async thinking(text: string) {
     await this.bridge.request({ op: 'setThinking', laneId: this.laneId, text: text.slice(0, 140) });
   }
+  async focus() {
+    await this.bridge.request({ op: 'focusLane', laneId: this.laneId });
+  }
+  async sheetWrite(cell: string, rows: string[][]) {
+    await this.bridge.request({ op: 'sheetWrite', laneId: this.laneId, cell, rows }, 60000);
+  }
+  async sheetRead(range?: string) {
+    return String(await this.bridge.request({ op: 'sheetRead', laneId: this.laneId, range }, 30000));
+  }
+  async docWrite(text: string) {
+    await this.bridge.request({ op: 'docWrite', laneId: this.laneId, text }, 60000);
+  }
+  async docRead() {
+    return String(await this.bridge.request({ op: 'docRead', laneId: this.laneId }, 30000));
+  }
 }
 
 // Receipts: one JSON line per step plus the step's screenshot, under receipts/<run>/<lane>/.
@@ -74,15 +92,24 @@ export class FileReceipts implements ReceiptSink {
     appendFileSync(join(this.dir, 'steps.jsonl'), JSON.stringify({ ...r, screenshot: shot }) + '\n');
   }
   event(kind: string, detail: unknown) {
-    appendFileSync(join(this.dir, 'events.jsonl'), JSON.stringify({ at: new Date().toISOString(), kind, detail }) + '\n');
+    appendFileSync(
+      join(this.dir, 'events.jsonl'),
+      JSON.stringify({ at: new Date().toISOString(), kind, detail }) + '\n',
+    );
   }
   finish(outcome: LaneOutcome) {
-    writeFileSync(join(this.dir, 'outcome.json'), JSON.stringify({ ...outcome, costUsd: costUsd(outcome.usage) }, null, 2));
+    writeFileSync(
+      join(this.dir, 'outcome.json'),
+      JSON.stringify({ ...outcome, costUsd: costUsd(outcome.usage) }, null, 2),
+    );
   }
 }
 
 // Crop the element an approval is about out of the lane's screenshot, for the approval card.
-export function cropElement(look: LookResult, rect: { x: number; y: number; w: number; h: number }): string | undefined {
+export function cropElement(
+  look: LookResult,
+  rect: { x: number; y: number; w: number; h: number },
+): string | undefined {
   if (!look.screenshot) return undefined;
   const img = nativeImage.createFromBuffer(Buffer.from(look.screenshot, 'base64'));
   const { width, height } = img.getSize();
@@ -108,24 +135,55 @@ export interface LaneLaunch {
   attempt?: number;
 }
 
-export async function launchLane(bridge: BridgeServer, model: Model, supervisor: Supervisor, launch: LaneLaunch): Promise<LaneOutcome & { receipts: string }> {
+export async function launchLane(
+  bridge: BridgeServer,
+  model: Model,
+  supervisor: Supervisor,
+  launch: LaneLaunch,
+): Promise<LaneOutcome & { receipts: string }> {
   // A lane never types passwords or card numbers, so it never needs them: mask them before anything sees the goal.
-  const l = { ...launch, spec: { ...launch.spec, goal: redactSecrets(launch.spec.goal) } };
+  const l = { ...launch, spec: { ...launch.spec, goal: redactSecrets(launch.spec.goal), siteNotes: listNotes() } };
   const dir = l.attempt && l.attempt > 1 ? `${l.laneId}-${l.attempt}` : l.laneId;
-  const receipts = new FileReceipts(l.runId, dir, { name: l.name, color: l.color, goal: l.spec.goal, startUrl: l.spec.startUrl, attempt: l.attempt ?? 1 });
+  const receipts = new FileReceipts(l.runId, dir, {
+    name: l.name,
+    color: l.color,
+    goal: l.spec.goal,
+    startUrl: l.spec.startUrl,
+    attempt: l.attempt ?? 1,
+  });
   log(`lane ${l.laneId} ${l.reuseWindow ? 'continuing' : 'starting'} (${l.name})`);
-  if (!l.reuseWindow) await bridge.request({ op: 'openLane', laneId: l.laneId, url: l.spec.startUrl, color: l.color, title: l.name, bounds: l.bounds }, 30000);
+  if (!l.reuseWindow)
+    await bridge.request(
+      { op: 'openLane', laneId: l.laneId, url: l.spec.startUrl, color: l.color, title: l.name, bounds: l.bounds },
+      30000,
+    );
   const hands = new BridgeHands(bridge, l.laneId);
   let outcome: LaneOutcome;
   try {
     // The lane window already opened at the start URL.
-    outcome = await runLane({ ...l.spec, startUrl: undefined }, hands, new ModelBrain(model), supervisor, receipts);
+    // Tips a lane finds go to the site notes, where the person can review them.
+    const withNotes: Supervisor = {
+      ...supervisor,
+      addSiteNote: (site, note) => {
+        if (addNote(site, note, 'lane')) log(`site note added for ${site}`);
+      },
+    };
+    outcome = await runLane({ ...l.spec, startUrl: undefined }, hands, new ModelBrain(model), withNotes, receipts);
   } catch (e) {
-    outcome = { status: 'failed', result: `Lane error: ${(e as Error).message}`, notes: [], steps: 0, ms: 0, usage: { input: 0, output: 0 } };
+    outcome = {
+      status: 'failed',
+      result: `Lane error: ${(e as Error).message}`,
+      notes: [],
+      steps: 0,
+      ms: 0,
+      usage: { input: 0, output: 0 },
+    };
     supervisor.status({ kind: 'stopped', reason: outcome.result });
   }
   receipts.finish(outcome);
-  log(`lane ${l.laneId} ${outcome.status} in ${outcome.steps} steps, ${(outcome.ms / 1000).toFixed(1)} s, $${costUsd(outcome.usage).toFixed(4)}`);
+  log(
+    `lane ${l.laneId} ${outcome.status} in ${outcome.steps} steps, ${(outcome.ms / 1000).toFixed(1)} s, $${costUsd(outcome.usage).toFixed(4)}`,
+  );
   if (!l.keepOpen) await bridge.request({ op: 'closeLane', laneId: l.laneId }).catch(() => undefined);
   return { ...outcome, receipts: receipts.dir };
 }

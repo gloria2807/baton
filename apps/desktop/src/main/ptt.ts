@@ -31,7 +31,9 @@ export class PushToTalk extends EventEmitter<{ ptt: [PttEvent] }> {
       }
       return;
     }
-    log(`push-to-talk ${a.type}${a.type === 'commit' ? ` after ${a.heldMs} ms` : a.type === 'cancel' ? ` (${a.reason})` : ''}`);
+    log(
+      `push-to-talk ${a.type}${a.type === 'commit' ? ` after ${a.heldMs} ms` : a.type === 'cancel' ? ` (${a.reason})` : ''}`,
+    );
     this.emit('ptt', a);
   }
 

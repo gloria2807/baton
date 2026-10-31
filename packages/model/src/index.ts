@@ -38,8 +38,15 @@ type Message = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 // Map that onto {thinking, action}; the caller's schema still validates the result.
 export function fromNativeToolCall(text: string): unknown | null {
   if (!text.includes('<|message|>')) return null;
-  const parts = [...text.matchAll(/to=([\w.-]+)\s*(?:<\|constrain\|>\w+)?\s*<\|message\|>([\s\S]*?)(?=<\|(?:eom|eot|end|call|return)\|>|<\|start\|>|$)/g)];
-  const commentary = parts.filter((p) => p[1] === 'commentary').map((p) => p[2]!.trim()).join(' ');
+  const parts = [
+    ...text.matchAll(
+      /to=([\w.-]+)\s*(?:<\|constrain\|>\w+)?\s*<\|message\|>([\s\S]*?)(?=<\|(?:eom|eot|end|call|return)\|>|<\|start\|>|$)/g,
+    ),
+  ];
+  const commentary = parts
+    .filter((p) => p[1] === 'commentary')
+    .map((p) => p[2]!.trim())
+    .join(' ');
   const call = parts.filter((p) => p[1] !== 'commentary').at(-1);
   if (!call) return null;
   const tool = call[1]!.replace(/^functions\./, '');
@@ -131,16 +138,29 @@ export class Model {
     proxyURL?: string,
   ) {
     if (!apiKey) throw new Error('BASETEN_API_KEY is not set');
-    this.client = new OpenAI({ baseURL: proxyURL ?? BASE_URL, apiKey, maxRetries: governor ? 0 : 2, timeout: 60000, dangerouslyAllowBrowser: !!proxyURL });
+    this.client = new OpenAI({
+      baseURL: proxyURL ?? BASE_URL,
+      apiKey,
+      maxRetries: governor ? 0 : 2,
+      timeout: 60000,
+      dangerouslyAllowBrowser: !!proxyURL,
+    });
   }
 
-  private create(params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  private create(
+    params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
     const call = () => this.client.chat.completions.create(params);
     return this.governor ? this.governor.run(call) : call();
   }
 
   // One JSON answer validated by `schema`. Invalid output is retried once with the error.
-  async json<T>(schema: z.ZodType<T>, messages: Message[], effort: Effort = 'low', maxTokens = 8000): Promise<Completion<T>> {
+  async json<T>(
+    schema: z.ZodType<T>,
+    messages: Message[],
+    effort: Effort = 'low',
+    maxTokens = 8000,
+  ): Promise<Completion<T>> {
     const t0 = performance.now();
     let convo = messages;
     let lastRaw = '';
@@ -161,14 +181,23 @@ export class Model {
           value,
           reasoning: msg?.reasoning_content ?? '',
           ms: performance.now() - t0,
-          usage: u ? { input: u.prompt_tokens, output: u.completion_tokens, reasoning: u.completion_tokens_details?.reasoning_tokens } : undefined,
+          usage: u
+            ? {
+                input: u.prompt_tokens,
+                output: u.completion_tokens,
+                reasoning: u.completion_tokens_details?.reasoning_tokens,
+              }
+            : undefined,
         };
       } catch (e) {
         lastError = e instanceof z.ZodError ? z.prettifyError(e) : (e as Error).message;
         convo = [
           ...messages,
           { role: 'assistant', content: lastRaw },
-          { role: 'user', content: `That reply was not valid: ${lastError}\nReply again with only the JSON object, in exactly the requested shape.` },
+          {
+            role: 'user',
+            content: `That reply was not valid: ${lastError}\nReply again with only the JSON object, in exactly the requested shape.`,
+          },
         ];
       }
     }
@@ -220,7 +249,8 @@ export class Model {
         let candidate: unknown;
         if (call) {
           const args = call.arguments?.trim() ? (JSON.parse(call.arguments) as unknown) : {};
-          if (typeof args !== 'object' || args === null || Array.isArray(args)) throw new Error('tool arguments are not an object');
+          if (typeof args !== 'object' || args === null || Array.isArray(args))
+            throw new Error('tool arguments are not an object');
           candidate = fromToolCall(call.name, args as Record<string, unknown>);
         } else {
           try {
@@ -237,7 +267,10 @@ export class Model {
         convo = [
           ...messages,
           { role: 'assistant', content: lastRaw || '(empty reply)' },
-          { role: 'user', content: `That was not a valid step: ${lastError}\nCall exactly one of the tools with all its required arguments.` },
+          {
+            role: 'user',
+            content: `That was not a valid step: ${lastError}\nCall exactly one of the tools with all its required arguments.`,
+          },
         ];
       }
     }
@@ -254,7 +287,13 @@ export class Model {
           'such as "get me there", "put this there", "what is this?", "now do the rest". Transcribe it exactly, then state the intent in a few words. ' +
           'If there is no speech, use an empty transcript.',
       },
-      { role: 'user', content: [{ type: 'text', text: 'Reply with JSON only: {"transcript":string,"intent":string}' }, audioPart(wav)] },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Reply with JSON only: {"transcript":string,"intent":string}' },
+          audioPart(wav),
+        ],
+      },
     ]);
   }
 }

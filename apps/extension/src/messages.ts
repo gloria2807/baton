@@ -27,7 +27,8 @@ export type ToContent =
   | { kind: 'fillCells'; mark: number; rows: string[][] }
   | { kind: 'cursorVisible'; visible: boolean };
 
-export type ToWorker = { kind: 'whoami' } | { kind: 'recording?' } | RestReport | { kind: 'recorded'; step: Record<string, unknown> };
+export type ToWorker =
+  { kind: 'whoami' } | { kind: 'recording?' } | RestReport | { kind: 'recorded'; step: Record<string, unknown> };
 
 export interface CollectResult {
   url: string;

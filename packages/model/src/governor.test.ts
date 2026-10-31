@@ -48,7 +48,8 @@ describe('model governor', () => {
     let calls = 0;
     const res = await g.run(async () => {
       calls++;
-      if (calls === 1) throw Object.assign(new Error('429 Rate limit exceeded'), { status: 429, headers: { 'retry-after': '3' } });
+      if (calls === 1)
+        throw Object.assign(new Error('429 Rate limit exceeded'), { status: 429, headers: { 'retry-after': '3' } });
       if (calls === 2) throw Object.assign(new Error('429'), { status: 429 });
       return usage(100, 10);
     });
@@ -61,10 +62,14 @@ describe('model governor', () => {
   it('gives up after the retry limit and does not retry other errors', async () => {
     const { g } = make({ maxRetries: 2 });
     let calls = 0;
-    await expect(g.run(async () => (calls++, Promise.reject(Object.assign(new Error('429'), { status: 429 }))))).rejects.toThrow('429');
+    await expect(
+      g.run(async () => (calls++, Promise.reject(Object.assign(new Error('429'), { status: 429 })))),
+    ).rejects.toThrow('429');
     expect(calls).toBe(3);
     calls = 0;
-    await expect(g.run(async () => (calls++, Promise.reject(Object.assign(new Error('400 bad'), { status: 400 }))))).rejects.toThrow('400');
+    await expect(
+      g.run(async () => (calls++, Promise.reject(Object.assign(new Error('400 bad'), { status: 400 })))),
+    ).rejects.toThrow('400');
     expect(calls).toBe(1);
   });
 
@@ -75,10 +80,39 @@ describe('model governor', () => {
     expect(first.g.spentToday).toBeCloseTo(1);
     await expect(first.g.run(async () => usage(1, 1))).rejects.toBeInstanceOf(BudgetExceededError);
     // A restart reads the saved total for the same day.
-    const restarted = new Governor({ maxConcurrent: 1, dailyBudgetUsd: 1, load: first.saved, save: () => undefined, now: () => new Date(2026, 9, 30, 18) });
+    const restarted = new Governor({
+      maxConcurrent: 1,
+      dailyBudgetUsd: 1,
+      load: first.saved,
+      save: () => undefined,
+      now: () => new Date(2026, 9, 30, 18),
+    });
     await expect(restarted.run(async () => usage(1, 1))).rejects.toBeInstanceOf(BudgetExceededError);
     // A new day starts from zero.
-    const tomorrow = new Governor({ maxConcurrent: 1, dailyBudgetUsd: 1, load: first.saved, save: () => undefined, now: () => new Date(2026, 9, 31, 9) });
+    const tomorrow = new Governor({
+      maxConcurrent: 1,
+      dailyBudgetUsd: 1,
+      load: first.saved,
+      save: () => undefined,
+      now: () => new Date(2026, 9, 31, 9),
+    });
     await expect(tomorrow.run(async () => usage(1, 1))).resolves.toBeTruthy();
+  });
+
+  it('keeps an all-time total across days and refuses calls past the total budget', async () => {
+    const day1 = make({ dailyBudgetUsd: 10, totalBudgetUsd: 1 });
+    await day1.g.run(async () => usage(600_000, 0)); // $0.75
+    const day2 = new Governor({
+      maxConcurrent: 1,
+      dailyBudgetUsd: 10,
+      totalBudgetUsd: 1,
+      load: day1.saved,
+      save: () => undefined,
+      now: () => new Date(2026, 9, 31, 9),
+    });
+    expect(day2.spentToday).toBe(0);
+    expect(day2.spentTotal).toBeCloseTo(0.75);
+    await day2.run(async () => usage(400_000, 0)); // total $1.25
+    await expect(day2.run(async () => usage(1, 1))).rejects.toThrow('total model budget');
   });
 });

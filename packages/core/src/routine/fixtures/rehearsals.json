@@ -4,25 +4,116 @@
     {
       "name": "enter one invoice email as a bill",
       "steps": [
-        { "type": "navigate", "at": 0, "url": "http://localhost:4400/", "title": "Mail · Inbox", "text": "Mail 40 unread" },
+        {
+          "type": "navigate",
+          "at": 0,
+          "url": "http://localhost:4400/",
+          "title": "Mail · Inbox",
+          "text": "Mail 40 unread"
+        },
         { "type": "narration", "at": 900, "text": "This is an invoice, I will put it into Ledgerly." },
-        { "type": "click", "at": 1500, "url": "http://localhost:4400/", "role": "listitem", "name": "Bluefin Cleaning Services Billing Invoice INV-2307 from Bluefin Cleaning Services", "href": "http://localhost:4400/m/inv-2" },
-        { "type": "navigate", "at": 1900, "url": "http://localhost:4400/m/inv-2", "title": "Invoice INV-2307 from Bluefin Cleaning Services · Inbox", "text": "Invoice number: INV-2307\nVendor: Bluefin Cleaning Services\nAmount due: $527.40\nDue date: November 19, 2026\nCategory: Facilities" },
+        {
+          "type": "click",
+          "at": 1500,
+          "url": "http://localhost:4400/",
+          "role": "listitem",
+          "name": "Bluefin Cleaning Services Billing Invoice INV-2307 from Bluefin Cleaning Services",
+          "href": "http://localhost:4400/m/inv-2"
+        },
+        {
+          "type": "navigate",
+          "at": 1900,
+          "url": "http://localhost:4400/m/inv-2",
+          "title": "Invoice INV-2307 from Bluefin Cleaning Services · Inbox",
+          "text": "Invoice number: INV-2307\nVendor: Bluefin Cleaning Services\nAmount due: $527.40\nDue date: November 19, 2026\nCategory: Facilities"
+        },
         { "type": "copy", "at": 4200, "url": "http://localhost:4400/m/inv-2", "text": "INV-2307" },
-        { "type": "navigate", "at": 6000, "url": "http://localhost:4401/", "title": "Bills · Ledgerly", "text": "Bills" },
-        { "type": "click", "at": 6800, "url": "http://localhost:4401/", "role": "link", "name": "+ New bill", "href": "http://localhost:4401/bills/new" },
-        { "type": "navigate", "at": 7100, "url": "http://localhost:4401/bills/new", "title": "New bill · Ledgerly", "text": "New bill" },
+        {
+          "type": "navigate",
+          "at": 6000,
+          "url": "http://localhost:4401/",
+          "title": "Bills · Ledgerly",
+          "text": "Bills"
+        },
+        {
+          "type": "click",
+          "at": 6800,
+          "url": "http://localhost:4401/",
+          "role": "link",
+          "name": "+ New bill",
+          "href": "http://localhost:4401/bills/new"
+        },
+        {
+          "type": "navigate",
+          "at": 7100,
+          "url": "http://localhost:4401/bills/new",
+          "title": "New bill · Ledgerly",
+          "text": "New bill"
+        },
         { "type": "narration", "at": 7600, "text": "The vendor goes here." },
         { "type": "click", "at": 7900, "url": "http://localhost:4401/bills/new", "role": "textbox", "name": "Vendor" },
-        { "type": "input", "at": 8500, "url": "http://localhost:4401/bills/new", "field": "Vendor", "kind": "text", "value": "Bluefin" },
-        { "type": "input", "at": 9900, "url": "http://localhost:4401/bills/new", "field": "Vendor", "kind": "text", "value": "Bluefin Cleaning Services" },
+        {
+          "type": "input",
+          "at": 8500,
+          "url": "http://localhost:4401/bills/new",
+          "field": "Vendor",
+          "kind": "text",
+          "value": "Bluefin"
+        },
+        {
+          "type": "input",
+          "at": 9900,
+          "url": "http://localhost:4401/bills/new",
+          "field": "Vendor",
+          "kind": "text",
+          "value": "Bluefin Cleaning Services"
+        },
         { "type": "narration", "at": 10500, "text": "This number is the reference." },
-        { "type": "paste", "at": 11000, "url": "http://localhost:4401/bills/new", "field": "Reference (invoice number)", "text": "INV-2307" },
-        { "type": "input", "at": 12800, "url": "http://localhost:4401/bills/new", "field": "Amount (USD)", "kind": "text", "value": "527.40" },
-        { "type": "input", "at": 14500, "url": "http://localhost:4401/bills/new", "field": "Due date", "kind": "date", "value": "2026-11-19" },
-        { "type": "input", "at": 15800, "url": "http://localhost:4401/bills/new", "field": "Category", "kind": "select-one", "value": "Facilities" },
-        { "type": "click", "at": 17000, "url": "http://localhost:4401/bills/new", "role": "button", "name": "Save bill" },
-        { "type": "navigate", "at": 17300, "url": "http://localhost:4401/?created=BL-0421", "title": "Bills · Ledgerly", "text": "Bill BL-0421 saved." }
+        {
+          "type": "paste",
+          "at": 11000,
+          "url": "http://localhost:4401/bills/new",
+          "field": "Reference (invoice number)",
+          "text": "INV-2307"
+        },
+        {
+          "type": "input",
+          "at": 12800,
+          "url": "http://localhost:4401/bills/new",
+          "field": "Amount (USD)",
+          "kind": "text",
+          "value": "527.40"
+        },
+        {
+          "type": "input",
+          "at": 14500,
+          "url": "http://localhost:4401/bills/new",
+          "field": "Due date",
+          "kind": "date",
+          "value": "2026-11-19"
+        },
+        {
+          "type": "input",
+          "at": 15800,
+          "url": "http://localhost:4401/bills/new",
+          "field": "Category",
+          "kind": "select-one",
+          "value": "Facilities"
+        },
+        {
+          "type": "click",
+          "at": 17000,
+          "url": "http://localhost:4401/bills/new",
+          "role": "button",
+          "name": "Save bill"
+        },
+        {
+          "type": "navigate",
+          "at": 17300,
+          "url": "http://localhost:4401/?created=BL-0421",
+          "title": "Bills · Ledgerly",
+          "text": "Bill BL-0421 saved."
+        }
       ],
       "expectClean": 17,
       "expectVariables": ["Bluefin Cleaning Services", "INV-2307", "527.40", "Facilities"]
@@ -30,9 +121,30 @@
     {
       "name": "a password is never kept",
       "steps": [
-        { "type": "navigate", "at": 0, "url": "http://localhost:4401/signin", "title": "Sign in", "text": "Sign in to Ledgerly" },
-        { "type": "input", "at": 900, "url": "http://localhost:4401/signin", "field": "Work email", "kind": "email", "value": "ama@harbourline.example" },
-        { "type": "input", "at": 2000, "url": "http://localhost:4401/signin", "field": "Password", "kind": "password", "value": "should-never-appear", "blocked": true }
+        {
+          "type": "navigate",
+          "at": 0,
+          "url": "http://localhost:4401/signin",
+          "title": "Sign in",
+          "text": "Sign in to Ledgerly"
+        },
+        {
+          "type": "input",
+          "at": 900,
+          "url": "http://localhost:4401/signin",
+          "field": "Work email",
+          "kind": "email",
+          "value": "ama@harbourline.example"
+        },
+        {
+          "type": "input",
+          "at": 2000,
+          "url": "http://localhost:4401/signin",
+          "field": "Password",
+          "kind": "password",
+          "value": "should-never-appear",
+          "blocked": true
+        }
       ],
       "expectClean": 3,
       "expectVariables": []

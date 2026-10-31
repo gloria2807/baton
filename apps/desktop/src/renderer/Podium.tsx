@@ -14,7 +14,8 @@ type Phase =
   | { kind: 'heard'; transcript: string; intent: string; ms: number; seconds: number }
   | { kind: 'notice'; text: string; tone: 'ok' | 'warn' | 'info' };
 
-const toneOf = (t: string): 'ok' | 'warn' | 'info' => (/passed/i.test(t) ? 'ok' : /fail|could not|unavailable|not connected|no baseten/i.test(t) ? 'warn' : 'info');
+const toneOf = (t: string): 'ok' | 'warn' | 'info' =>
+  /passed/i.test(t) ? 'ok' : /fail|could not|unavailable|not connected|no baseten/i.test(t) ? 'warn' : 'info';
 
 interface CueUpdate {
   phase: 'saved' | 'heard' | 'error';
@@ -30,15 +31,52 @@ type PttEvent = { type: 'start' } | { type: 'commit'; heldMs: number } | { type:
 const BARS = 28;
 
 // Today's model spending against the daily cap, so the cost is never a surprise.
-function Budget() {
-  const [b, setB] = useState<{ spent: number; budget: number } | null>(null);
+type Note = { id: number; site: string; note: string; source: string };
+
+// Baton's memory of how sites work: what lanes have learned, for the person to review.
+function SiteNotes() {
+  const [notes, setNotes] = useState<Note[]>([]);
   useEffect(() => {
-    void window.baton.getBudget().then((x) => setB(x as { spent: number; budget: number } | null));
+    void window.baton.listNotes().then((n) => setNotes(n as Note[]));
+  }, []);
+  if (!notes.length) return null;
+  return (
+    <div className="notes">
+      <div className="label">Site notes: what lanes are told on each site</div>
+      <ul>
+        {notes.map((n) => (
+          <li key={n.id}>
+            <span className="site">{n.site}</span>
+            <span className="text">
+              {n.note}
+              {n.source === 'lane' ? <em> · learned by a lane</em> : null}
+            </span>
+            <button
+              className="btn ghost small"
+              onClick={() => void window.baton.removeNote(n.id).then((x) => setNotes(x as Note[]))}
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+type Spend = { spent: number; budget: number; total: number; totalBudget?: number };
+
+function Budget() {
+  const [b, setB] = useState<Spend | null>(null);
+  useEffect(() => {
+    void window.baton.getBudget().then((x) => setB(x as Spend | null));
   }, []);
   if (!b) return null;
   return (
     <div className="budget">
-      Model spend today: ${b.spent.toFixed(2)} of ${b.budget.toFixed(2)}. Set BATON_DAILY_BUDGET_USD in .env to change the cap.
+      Model spend today: ${b.spent.toFixed(2)} of ${b.budget.toFixed(2)}
+      {b.totalBudget !== undefined ? `; in total: $${b.total.toFixed(2)} of $${b.totalBudget.toFixed(2)}` : ''}. The
+      caps are BATON_DAILY_BUDGET_USD and BATON_TOTAL_BUDGET_USD in .env.
     </div>
   );
 }
@@ -85,7 +123,8 @@ export function Podium() {
         const next = l as LaneView[];
         setLanes((prev) => {
           if (!prev.length && next.length) sounds.lanesStart();
-          else if (next.some((n) => n.state === 'done' && prev.find((p) => p.laneId === n.laneId)?.state !== 'done')) sounds.laneDone();
+          else if (next.some((n) => n.state === 'done' && prev.find((p) => p.laneId === n.laneId)?.state !== 'done'))
+            sounds.laneDone();
           return next;
         });
       }),
@@ -110,8 +149,15 @@ export function Podium() {
         const u = raw as CueUpdate;
         if (u.phase === 'heard') {
           sounds.heard();
-          setPhase({ kind: 'heard', transcript: u.transcript ?? '', intent: u.intent ?? '', ms: u.ms ?? 0, seconds: seconds.current });
-        } else if (u.phase === 'error') setPhase({ kind: 'notice', text: u.error ?? 'Something went wrong', tone: 'warn' });
+          setPhase({
+            kind: 'heard',
+            transcript: u.transcript ?? '',
+            intent: u.intent ?? '',
+            ms: u.ms ?? 0,
+            seconds: seconds.current,
+          });
+        } else if (u.phase === 'error')
+          setPhase({ kind: 'notice', text: u.error ?? 'Something went wrong', tone: 'warn' });
       }),
     ];
     return () => offs.forEach((off) => off());
@@ -161,7 +207,11 @@ export function Podium() {
     window.baton.reportMic(rec.openMs, rec.seconds, rec.timing);
     seconds.current = rec.seconds;
     if (rec.seconds < 0.25 || rms(rec.samples) < 0.004) {
-      setPhase({ kind: 'notice', text: rec.seconds < 0.25 ? 'Hold the key while you speak.' : 'I didn’t hear anything.', tone: 'warn' });
+      setPhase({
+        kind: 'notice',
+        text: rec.seconds < 0.25 ? 'Hold the key while you speak.' : 'I didn’t hear anything.',
+        tone: 'warn',
+      });
       return;
     }
     setPhase({ kind: 'understanding', seconds: rec.seconds });
@@ -198,7 +248,11 @@ export function Podium() {
           {phase.kind === 'idle' && (
             <>
               <div className="main">Hold {talkKeys.find((k) => k.id === talkKey)?.label ?? talkKey} and speak</div>
-              <div className="sub">{hasModel ? 'Release to send. Baton listens only while the key is down.' : 'No Baseten key found: recordings are saved but not understood.'}</div>
+              <div className="sub">
+                {hasModel
+                  ? 'Release to send. Baton listens only while the key is down.'
+                  : 'No Baseten key found: recordings are saved but not understood.'}
+              </div>
             </>
           )}
           {phase.kind === 'opening' && <div className="main opening">Opening microphone…</div>}
@@ -272,6 +326,7 @@ export function Podium() {
           </div>
           {profile && <ProfileForm initial={profile} />}
           <Budget />
+          <SiteNotes />
           <ol>
             <li>In Chrome, open the Baton extension’s options.</li>
             <li>Paste this token and press Save.</li>
@@ -281,7 +336,11 @@ export function Podium() {
             <button className="btn ghost" onClick={() => setPanel(false)}>
               Close
             </button>
-            <button className="btn" disabled={extension !== 'connected'} onClick={() => void window.baton.runSelfTest()}>
+            <button
+              className="btn"
+              disabled={extension !== 'connected'}
+              onClick={() => void window.baton.runSelfTest()}
+            >
               Run lane self-test
             </button>
           </div>

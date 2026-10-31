@@ -39,8 +39,12 @@ export const Routine = z.object({
 export type Routine = z.infer<typeof Routine>;
 
 export function compileMessages(steps: RecordedStep[], hints: VariableHint[]): LaneMessage[] {
-  const lines = steps.map((s, i) => `${i + 1}. [${(s.at / 1000).toFixed(1)} s${'url' in s ? ` · ${s.url}` : ''}] ${describeStep(s)}`);
-  const pages = steps.filter((s): s is Extract<RecordedStep, { type: 'navigate' }> => s.type === 'navigate' && s.text.length > 0).slice(0, 4);
+  const lines = steps.map(
+    (s, i) => `${i + 1}. [${(s.at / 1000).toFixed(1)} s${'url' in s ? ` · ${s.url}` : ''}] ${describeStep(s)}`,
+  );
+  const pages = steps
+    .filter((s): s is Extract<RecordedStep, { type: 'navigate' }> => s.type === 'navigate' && s.text.length > 0)
+    .slice(0, 4);
   return [
     {
       role: 'system',
@@ -56,7 +60,9 @@ Reply with JSON only: {"name":string,"summary":string,"itemKind":string,"itemSou
       role: 'user',
       content: [
         `Recording (in order):\n${lines.join('\n')}`,
-        hints.length ? `Values that came from the item (copied or seen on an earlier page):\n${hints.map((h) => `- ${h.field}: “${h.value}” (${h.source} from ${h.from})`).join('\n')}` : 'No typed value was seen on an earlier page.',
+        hints.length
+          ? `Values that came from the item (copied or seen on an earlier page):\n${hints.map((h) => `- ${h.field}: “${h.value}” (${h.source} from ${h.from})`).join('\n')}`
+          : 'No typed value was seen on an earlier page.',
         ...pages.map((p) => untrusted(`page ${p.url}`, p.text.slice(0, 2500))),
       ].join('\n\n'),
     },
@@ -68,7 +74,11 @@ Reply with JSON only: {"name":string,"summary":string,"itemKind":string,"itemSou
 export const ItemPick = z.object({ numbers: z.array(z.coerce.number().int().positive()).max(200) });
 export type ItemPick = z.infer<typeof ItemPick>;
 
-export function itemsMessages(routine: Routine, links: Array<{ name: string; href: string }>, done: string[]): LaneMessage[] {
+export function itemsMessages(
+  routine: Routine,
+  links: Array<{ name: string; href: string }>,
+  done: string[],
+): LaneMessage[] {
   return [
     {
       role: 'system',
@@ -86,7 +96,11 @@ export function itemsMessages(routine: Routine, links: Array<{ name: string; hre
 }
 
 // The chosen links, each once, never one already done.
-export function pickedItems(pick: ItemPick, links: Array<{ name: string; href: string }>, done: string[]): Array<{ title: string; url: string }> {
+export function pickedItems(
+  pick: ItemPick,
+  links: Array<{ name: string; href: string }>,
+  done: string[],
+): Array<{ title: string; url: string }> {
   const seen = new Set<string>();
   const out: Array<{ title: string; url: string }> = [];
   for (const n of pick.numbers) {
@@ -107,7 +121,9 @@ export function performGoal(routine: Routine, item: { title: string; url: string
     routine.variables.length
       ? `Read these values from this item (do not reuse the examples, which belong to another item):\n${routine.variables.map((v) => `- {${v.name}}: ${v.description} (example from the rehearsal: “${v.example}”)`).join('\n')}`
       : '',
-    routine.doneCheck ? `Before the final save, check whether it was already done (${routine.doneCheck}). If so, finish with “already done” and do not enter it again.` : '',
+    routine.doneCheck
+      ? `Before the final save, check whether it was already done (${routine.doneCheck}). If so, finish with “already done” and do not enter it again.`
+      : '',
     'Use fill_form to fill forms in one step. Finish with the values you used.',
   ]
     .filter(Boolean)

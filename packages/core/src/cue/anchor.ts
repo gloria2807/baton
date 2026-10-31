@@ -13,7 +13,13 @@ export const AnchorTarget = z.object({
   href: z.string().optional(),
   image: z.object({ src: z.string().max(500), alt: z.string().max(300) }).optional(),
   // A table under the pointer, as rows of cell text; editable when its cells are inputs (a sheet).
-  table: z.object({ rows: z.array(z.array(z.string().max(300))).max(60), editable: z.boolean(), pointedRow: z.number().int().optional() }).optional(),
+  table: z
+    .object({
+      rows: z.array(z.array(z.string().max(300))).max(60),
+      editable: z.boolean(),
+      pointedRow: z.number().int().optional(),
+    })
+    .optional(),
 });
 export type AnchorTarget = z.infer<typeof AnchorTarget>;
 

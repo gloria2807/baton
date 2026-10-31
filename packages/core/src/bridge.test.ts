@@ -8,7 +8,14 @@ describe('bridge schemas', () => {
     const ok = [
       { op: 'ping' },
       { op: 'openLane', laneId: 'blue', url: 'http://localhost:4401/', color: '#3b82f6', title: 'Flights' },
-      { op: 'openLane', laneId: 'l1', url: 'https://example.com', color: '#3b82f6', title: 't', bounds: { left: 0, top: 0, width: 960, height: 540 } },
+      {
+        op: 'openLane',
+        laneId: 'l1',
+        url: 'https://example.com',
+        color: '#3b82f6',
+        title: 't',
+        bounds: { left: 0, top: 0, width: 960, height: 540 },
+      },
       { op: 'look', laneId: 'blue' },
       { op: 'click', laneId: 'blue', mark: 5 },
       { op: 'click', laneId: 'blue', x: 10, y: 20 },
@@ -22,7 +29,12 @@ describe('bridge schemas', () => {
   });
 
   it('fills defaults for look', () => {
-    expect(Command.parse({ op: 'look', laneId: 'a' })).toEqual({ op: 'look', laneId: 'a', maxWidth: 1280, screenshot: true });
+    expect(Command.parse({ op: 'look', laneId: 'a' })).toEqual({
+      op: 'look',
+      laneId: 'a',
+      maxWidth: 1280,
+      screenshot: true,
+    });
   });
 
   it('rejects malformed commands', () => {
@@ -40,8 +52,18 @@ describe('bridge schemas', () => {
   });
 
   it('parses frames in both directions and drops junk', () => {
-    expect(parseFrame(FromExtension, '{"type":"hello","token":"abcdefghijklmnopqrstu","version":1,"extensionVersion":"0.1.0"}')?.type).toBe('hello');
-    expect(parseFrame(FromExtension, '{"type":"result","id":3,"ok":false,"error":"no tab"}')).toEqual({ type: 'result', id: 3, ok: false, error: 'no tab' });
+    expect(
+      parseFrame(
+        FromExtension,
+        '{"type":"hello","token":"abcdefghijklmnopqrstu","version":1,"extensionVersion":"0.1.0"}',
+      )?.type,
+    ).toBe('hello');
+    expect(parseFrame(FromExtension, '{"type":"result","id":3,"ok":false,"error":"no tab"}')).toEqual({
+      type: 'result',
+      id: 3,
+      ok: false,
+      error: 'no tab',
+    });
     expect(parseFrame(ToExtension, '{"type":"command","id":1,"command":{"op":"ping"}}')?.type).toBe('command');
     expect(parseFrame(FromExtension, 'not json')).toBeNull();
     expect(parseFrame(FromExtension, '{"type":"result","id":"x","ok":true}')).toBeNull();
@@ -100,7 +122,8 @@ describe('BridgeSession', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  const hello = (tok: string, version = PROTOCOL_VERSION) => JSON.stringify({ type: 'hello', token: tok, version, extensionVersion: '0.1.0' });
+  const hello = (tok: string, version = PROTOCOL_VERSION) =>
+    JSON.stringify({ type: 'hello', token: tok, version, extensionVersion: '0.1.0' });
 
   it('pairs with the right token and answers welcome', () => {
     const onPaired = vi.fn();
@@ -113,7 +136,12 @@ describe('BridgeSession', () => {
   });
 
   it('rejects a wrong token, a wrong version, a non-hello first frame and junk', () => {
-    for (const frame of [hello(newPairingToken()), hello(token, 99), JSON.stringify({ type: 'event', event: { kind: 'log', message: 'hi' } }), 'garbage']) {
+    for (const frame of [
+      hello(newPairingToken()),
+      hello(token, 99),
+      JSON.stringify({ type: 'event', event: { kind: 'log', message: 'hi' } }),
+      'garbage',
+    ]) {
       const tt = new FakeTransport();
       const s = new BridgeSession(tt, token);
       s.receive(frame);

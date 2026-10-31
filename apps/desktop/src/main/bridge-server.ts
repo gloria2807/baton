@@ -3,7 +3,14 @@
 
 import { EventEmitter } from 'node:events';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { BRIDGE_PORT, BridgeError, BridgeSession, isAllowedOrigin, type CommandInput, type LaneEvent } from '@baton/core';
+import {
+  BRIDGE_PORT,
+  BridgeError,
+  BridgeSession,
+  isAllowedOrigin,
+  type CommandInput,
+  type LaneEvent,
+} from '@baton/core';
 import { log } from './log';
 
 export interface BridgeEvents {

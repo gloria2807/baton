@@ -18,6 +18,9 @@ export interface Completion<T> {
   reasoning: string;
   ms: number;
   usage?: { input: number; output: number; reasoning?: number };
+  // Where the time went: waiting for the governor's turn, and the model call itself.
+  waitMs?: number;
+  callMs?: number;
 }
 
 export class ModelOutputError extends Error {
@@ -147,11 +150,23 @@ export class Model {
     });
   }
 
-  private create(
+  // `clock` collects time spent waiting for a turn and time spent in the call (retries included).
+  private async create(
     params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+    clock?: { waitMs: number; callMs: number },
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
-    const call = () => this.client.chat.completions.create(params);
-    return this.governor ? this.governor.run(call) : call();
+    const queued = performance.now();
+    let started = 0;
+    const call = () => {
+      started ||= performance.now();
+      return this.client.chat.completions.create(params);
+    };
+    const res = await (this.governor ? this.governor.run(call) : call());
+    if (clock) {
+      clock.waitMs += started - queued;
+      clock.callMs += performance.now() - started;
+    }
+    return res;
   }
 
   // One JSON answer validated by `schema`. Invalid output is retried once with the error.
@@ -162,16 +177,20 @@ export class Model {
     maxTokens = 8000,
   ): Promise<Completion<T>> {
     const t0 = performance.now();
+    const clock = { waitMs: 0, callMs: 0 };
     let convo = messages;
     let lastRaw = '';
     let lastError = '';
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.create({
-        model: MODEL,
-        messages: convo,
-        max_tokens: maxTokens,
-        reasoning_effort: effort,
-      } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+      const res = await this.create(
+        {
+          model: MODEL,
+          messages: convo,
+          max_tokens: maxTokens,
+          reasoning_effort: effort,
+        } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+        clock,
+      );
       const msg = res.choices[0]?.message as unknown as { content?: string | null; reasoning_content?: string };
       lastRaw = msg?.content ?? '';
       try {
@@ -181,6 +200,7 @@ export class Model {
           value,
           reasoning: msg?.reasoning_content ?? '',
           ms: performance.now() - t0,
+          ...clock,
           usage: u
             ? {
                 input: u.prompt_tokens,
@@ -218,20 +238,24 @@ export class Model {
     fromProse?: (text: string) => unknown,
   ): Promise<Completion<T>> {
     const t0 = performance.now();
+    const clock = { waitMs: 0, callMs: 0 };
     let convo = messages;
     let lastRaw = '';
     let lastError = '';
     const usage = { input: 0, output: 0, reasoning: 0 };
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.create({
-        model: MODEL,
-        messages: convo,
-        tools,
-        // Enforced by Baseten (measured): the model must call a tool, so it cannot answer in prose.
-        tool_choice: 'required',
-        max_tokens: 8000,
-        reasoning_effort: effort,
-      } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+      const res = await this.create(
+        {
+          model: MODEL,
+          messages: convo,
+          tools,
+          // Enforced by Baseten (measured): the model must call a tool, so it cannot answer in prose.
+          tool_choice: 'required',
+          max_tokens: 8000,
+          reasoning_effort: effort,
+        } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+        clock,
+      );
       const u = res.usage;
       if (u) {
         usage.input += u.prompt_tokens;
@@ -261,7 +285,7 @@ export class Model {
           }
         }
         const value = schema.parse(candidate);
-        return { value, reasoning: msg?.reasoning_content ?? '', ms: performance.now() - t0, usage };
+        return { value, reasoning: msg?.reasoning_content ?? '', ms: performance.now() - t0, usage, ...clock };
       } catch (e) {
         lastError = e instanceof z.ZodError ? z.prettifyError(e) : (e as Error).message;
         convo = [

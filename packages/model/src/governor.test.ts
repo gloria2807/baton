@@ -116,3 +116,26 @@ describe('model governor', () => {
     await expect(day2.run(async () => usage(1, 1))).rejects.toThrow('total model budget');
   });
 });
+
+describe('model governor: concurrency for a Score', () => {
+  it('lets more calls run at once when a Score needs more lanes, without losing count', async () => {
+    let saved: SpendState | null = null;
+    const g = new Governor({ maxConcurrent: 2, dailyBudgetUsd: 100, load: () => saved, save: (s) => (saved = s) });
+    let live = 0;
+    let peak = 0;
+    const call = () =>
+      g.run(async () => {
+        peak = Math.max(peak, ++live);
+        await new Promise((r) => setTimeout(r, 20));
+        live--;
+        return { usage: { prompt_tokens: 1, completion_tokens: 1 } };
+      });
+    const first = Array.from({ length: 6 }, call);
+    g.ensureConcurrency(4);
+    await Promise.all(first);
+    expect(peak).toBe(4);
+    peak = 0;
+    await Promise.all(Array.from({ length: 8 }, call));
+    expect(peak).toBe(4);
+  });
+});

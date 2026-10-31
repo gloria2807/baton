@@ -672,6 +672,7 @@ function handleArgs(argv: string[]) {
               multi: real.startsWith('--bench-real-multi'),
               only: real.includes('=') ? real.split('=')[1]!.split(',') : undefined,
               repeat: Number(arg('repeat') ?? 1),
+              label: arg('label'),
             })
           : Promise.reject(new Error('no Baseten key')),
       'BENCH_REAL',

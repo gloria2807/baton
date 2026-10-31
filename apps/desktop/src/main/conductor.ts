@@ -29,6 +29,7 @@ import {
   listenText,
   PlanStream,
   goalWithProfile,
+  partGoal,
   manualMinutes,
   mapDeixis,
   mergeMessages,
@@ -412,6 +413,8 @@ export class Conductor {
       return null;
     }
     this.busy = true;
+    // Every running lane gets its own turn at the model; a lower cap makes lanes wait on each other.
+    model.governor?.ensureConcurrency(opts.limit ?? DEFAULT_LANE_LIMIT);
     const run: ScoreRunState = {
       score: { title: 'Planning…', parts: [], final: '' } as unknown as Score,
       runId: `score-${new Date().toISOString().replace(/[:.]/g, '-')}`,
@@ -521,7 +524,7 @@ export class Conductor {
       this.publishLanes();
     }
     const bounds = tile(run.slots.length, workArea, 110)[slot];
-    let goal = goalWithProfile(part.goal, this.getProfile());
+    let goal = partGoal(goalWithProfile(part.goal, this.getProfile()));
     for (;;) {
       st.state = 'running';
       const out = await launchLane(this.bridge, model, this.scoreSupervisor(run, st), {
@@ -539,7 +542,7 @@ export class Conductor {
       st.receipts.push(out.receipts);
       // Redirected while waiting: carry on in the same window with the new instruction.
       if (st.redirect && !this.stopRequested.has(st.laneId)) {
-        goal = `${goalWithProfile(part.goal, this.getProfile())}\n\nThe person then told this lane: “${st.redirect}”. Follow that; it overrides the goal where they conflict.`;
+        goal = `${partGoal(goalWithProfile(part.goal, this.getProfile()))}\n\nThe person then told this lane: “${st.redirect}”. Follow that; it overrides the goal where they conflict.`;
         st.redirect = undefined;
         st.attempt++;
         continue;

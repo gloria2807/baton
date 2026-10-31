@@ -141,6 +141,11 @@ export const LookResult = z.object({
   consent: z.array(z.string().max(120)).max(12).optional(),
   // Editors that draw on a canvas, whose contents are not in the element list.
   app: z.enum(['sheets', 'docs']).optional(),
+  // Where the look's time went, in milliseconds (speed measurement).
+  timing: z
+    .object({ settle: z.number(), tidy: z.number(), collect: z.number(), screenshot: z.number() })
+    .partial()
+    .optional(),
 });
 export type LookResult = z.infer<typeof LookResult>;
 

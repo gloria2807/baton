@@ -165,7 +165,18 @@ async function waitForSettle(tabId: number) {
   await chrome.scripting
     .executeScript({ target: { tabId }, func: settleFrame, args: [500, 4000] })
     .catch(() => undefined);
+  settledAt.set(tabId, Date.now());
 }
+
+// When each tab last navigated and last settled: a look only waits for the page to settle if it
+// navigated since (measured: the wait was 0.5–0.9 s of every step, mostly after actions that did
+// not navigate, or right after the action had already waited).
+const committedAt = new Map<number, number>();
+const settledAt = new Map<number, number>();
+chrome.webNavigation.onCommitted.addListener((d) => {
+  if (d.frameId === 0) committedAt.set(d.tabId, Date.now());
+});
+const needsSettle = (tabId: number) => (committedAt.get(tabId) ?? 0) >= (settledAt.get(tabId) ?? 0);
 
 // The top frame, plus frames that belong to consent and bot-check providers. Ad-heavy pages have
 // dozens of ad frames; visiting every one made a single look take fifteen seconds.
@@ -472,9 +483,21 @@ async function execute(c: Command): Promise<unknown> {
 
     case 'look': {
       const l = lane(c.laneId);
-      await waitForSettle(l.tabId);
+      // Where the look's time goes (docs/FOCUS.md section 1).
+      let t = performance.now();
+      const lap = () => {
+        const now = performance.now();
+        const ms = Math.round(now - t);
+        t = now;
+        return ms;
+      };
+      if (needsSettle(l.tabId)) await waitForSettle(l.tabId);
+      else await waitForLoad(l.tabId);
+      const settleMs = lap();
       const tidied = await tidy(l.tabId);
+      const tidyMs = lap();
       const page = await toTab<CollectResult>(l.tabId, { kind: 'collect', showMarks: c.screenshot });
+      const collectMs = lap();
       let screenshot: string | undefined;
       let scale = page.dpr;
       if (c.screenshot) {
@@ -518,6 +541,7 @@ async function execute(c: Command): Promise<unknown> {
         blocker: tidied.captcha ? { kind: 'captcha', text: tidied.captcha.slice(0, 300) } : undefined,
         consent: tidied.consent,
         app,
+        timing: { settle: settleMs, tidy: tidyMs, collect: collectMs, screenshot: c.screenshot ? lap() : 0 },
       };
       return result;
     }

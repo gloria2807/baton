@@ -60,6 +60,15 @@ export class Governor {
         : { day: today, usd: 0, total: saved?.total ?? saved?.usd ?? 0 };
   }
 
+  // A Score of n lanes needs n calls in flight, or its lanes wait on each other (docs/FOCUS.md §1).
+  ensureConcurrency(n: number) {
+    if (n > this.opts.maxConcurrent) this.opts.maxConcurrent = n;
+    while (this.inFlight < this.opts.maxConcurrent && this.queue.length) {
+      this.inFlight++;
+      this.queue.shift()!();
+    }
+  }
+
   get spentToday(): number {
     this.rollDay();
     return this.state.usd;
@@ -87,13 +96,14 @@ export class Governor {
       this.inFlight++;
       return;
     }
+    // The call that finishes hands its slot straight to the next one (see release).
     await new Promise<void>((resolve) => this.queue.push(resolve));
-    this.inFlight++;
   }
 
   private release() {
-    this.inFlight--;
-    this.queue.shift()?.();
+    const next = this.queue.shift();
+    if (next) next();
+    else this.inFlight--;
   }
 
   // Run one call. `fn` must return the API response (with `usage`) so its cost can be counted.

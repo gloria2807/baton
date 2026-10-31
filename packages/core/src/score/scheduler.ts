@@ -18,6 +18,14 @@ export interface RunOptions {
   onUpdate?: (u: PartUpdate) => void;
 }
 
+// A lane running one part of a Score. Measured: alone with one part, lanes dug for extra detail and
+// took 2–4 times more steps for that part than one lane doing every part in turn.
+export function partGoal(goal: string): string {
+  return `${goal}
+
+This is one part of a larger plan; other lanes are doing the other parts at the same time. Get exactly what this part asks for from the most direct page, then finish at once. Do not look for extra detail.`;
+}
+
 // A dependent part's goal carries what its dependencies found.
 export function goalWithInputs(part: Part, inputs: Record<string, PartResult>, score: Score): string {
   const lines = part.dependsOn

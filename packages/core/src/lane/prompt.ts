@@ -151,7 +151,7 @@ export function readMessages(goal: string, what: string, look: LookResult): Lane
     { role: 'system', content: EXTRACT_SYSTEM },
     {
       role: 'user',
-      content: `Lane goal: ${goal}\nNote down: ${what}\nBe concise and exact (names, prices, times, numbers). If it is not on the page, say "not found".\nReply {"facts": string}\n\nPage: ${look.url}\n${untrusted('page text', look.text.slice(0, 8000) + fieldValues(look))}`,
+      content: `Lane goal: ${goal}\nNote down: ${what}, and any other facts on this page that the lane goal asks for (so the page need not be read again).\nBe concise and exact (names, prices, times, numbers). If it is not on the page, say "not found".\nReply {"facts": string}\n\nPage: ${look.url}\n${untrusted('page text', look.text.slice(0, 8000) + fieldValues(look))}`,
     },
   ];
 }

@@ -208,7 +208,59 @@ export function realMultiTasks(env: RealEnv): RealTask[] {
           : { ok: false, detail: 'fewer than two temperatures' };
       },
     },
+    // Three or more independent parts: where running lanes side by side should pay off most.
+    {
+      id: 'weather-three-cities',
+      kind: 'weather site',
+      request: 'What is the weather right now in Lisbon, London and Lagos? Look each city up separately.',
+      startUrl: 'https://www.timeanddate.com/weather/',
+      manualSeconds: 120,
+      check: async ({ text }) => {
+        const temps = text.match(new RegExp(temperature.source, 'gi')) ?? [];
+        const cities = ['Lisbon', 'London', 'Lagos'].filter((c) => text.toLowerCase().includes(c.toLowerCase()));
+        return temps.length >= 3 && cities.length === 3
+          ? { ok: true, detail: `${temps.length} temperatures for all three cities` }
+          : { ok: false, detail: `${temps.length} temperatures; cities named: ${cities.join(', ') || 'none'}` };
+      },
+    },
+    {
+      id: 'three-museums',
+      kind: "museums' own sites",
+      request:
+        "What are the visiting hours of the British Museum, the Louvre and the Rijksmuseum? Use each museum's own website.",
+      startUrl: 'https://www.britishmuseum.org/visit',
+      manualSeconds: 180,
+      check: async ({ text }) => {
+        const hours =
+          text.match(
+            /\b\d{1,2}(\s*[:.h]\s*\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?\s*(–|-|to|until)\s*\d{1,2}(\s*[:.h]\s*\d{2})?/gi,
+          ) ?? [];
+        const named = ['British Museum', 'Louvre', 'Rijksmuseum'].filter((m) => text.includes(m));
+        return hours.length >= 3 && named.length === 3
+          ? { ok: true, detail: `${hours.length} opening-hour ranges for all three` }
+          : { ok: false, detail: `${hours.length} hour ranges; museums named: ${named.join(', ') || 'none'}` };
+      },
+    },
   ];
+  if (env.docUrl) {
+    const url = env.docUrl;
+    // Demo 1: four parts, three independent, then a write-up in the person's own Doc.
+    tasks.push({
+      id: 'lisbon-weekend',
+      kind: 'weather, food, museum → Docs',
+      request: `Plan a weekend in Lisbon for two: weather, three places to eat near the old town, one museum that's open Sunday, then write it up in this doc: ${url} — start the write-up with the heading "Lisbon weekend ${t}".`,
+      startUrl: 'https://www.timeanddate.com/weather/portugal/lisbon',
+      manualSeconds: 900,
+      needs: ['google', 'doc'],
+      check: async ({ read }) => {
+        const doc = await read.doc(url);
+        const at = doc.indexOf(`Lisbon weekend ${t}`);
+        if (at < 0) return { ok: false, detail: 'the write-up is not in the doc' };
+        const plan = doc.slice(at);
+        return has(plan, temperature, /museum/i, /restaurant|eat|tasca|caf[eé]|food/i);
+      },
+    });
+  }
   if (env.sheetUrl) {
     const url = env.sheetUrl;
     tasks.push({

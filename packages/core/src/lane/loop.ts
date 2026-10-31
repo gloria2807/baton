@@ -31,6 +31,25 @@ export interface BrainReply<T> {
   reasoning: string;
   ms: number;
   usage?: Usage;
+  waitMs?: number; // waiting for a turn at the model (the governor's cap)
+  callMs?: number; // the model call itself
+}
+
+// Where one step's time went (docs/FOCUS.md section 1), in milliseconds.
+export interface StepTiming {
+  decide: number; // building the prompt, waiting for a turn and the model call
+  act: number; // everything after the decision: the action, the next look and the check
+  total: number;
+  wait?: number;
+  model?: number;
+  action?: number;
+  look?: number; // the look after the action, all of it
+  settle?: number; // inside the look: waiting for the page to settle
+  tidy?: number; // inside the look: clearing banners and pop-ups
+  collect?: number; // inside the look: reading the page and numbering elements
+  screenshot?: number; // inside the look
+  verify?: number;
+  usedScreenshot?: boolean;
 }
 
 export interface Brain {
@@ -105,7 +124,7 @@ export interface StepRecord {
   gate: GateRecord;
   gateSummary?: string;
   verdict: Verdict;
-  ms: { decide: number; act: number; total: number };
+  ms: StepTiming;
   usage?: Usage;
 }
 
@@ -288,17 +307,33 @@ export async function runLane(
     const circling =
       last6.length === 6 && new Set(last6).size <= 3 && last6.slice(0, 3).join('|') === last6.slice(3).join('|');
     const circlingTwo = last6.length === 6 && new Set(last6).size === 2 && last6.every((a, i) => a === last6[i % 2]);
+    // Toggling the same buttons with reads in between is circling too (measured: a Maps lane clicked
+    // two buttons back and forth for 30 steps after it already had the answer).
+    const last10 = history.slice(-10);
+    const counts = new Map<string, number>();
+    for (const h of last10) if (!h.action.startsWith('read')) counts.set(h.action, (counts.get(h.action) ?? 0) + 1);
+    const worn = [...counts.entries()].find(([, n]) => n >= 3)?.[0];
+    const rereads = last10.filter((h) => h.action.startsWith('read') && h.page === look.url).length >= 3;
+    // Guessing addresses on one site (measured: a lane tried 25 weather.com addresses that mostly
+    // redirected) is wandering even when no address repeats.
+    const site = hostOf(look.url);
+    const guesses = last10.filter((h) => h.action.startsWith('open_url ') && hostOf(h.action.slice(9)) === site).length;
     const stepWarning = repeating
       ? `You have done “${last3[0]!.action.slice(0, 80)}” three times and it worked each time. It is done; do not repeat it. Move on to the next part of the goal, or finish.`
       : circling || circlingTwo
         ? `You are going in circles between the same ${new Set(last6).size} actions. Stop re-reading and act: fill in and submit the form the goal needs, or finish with what you have.`
-        : warning;
+        : guesses >= 4
+          ? `You have tried ${guesses} different addresses on ${site}. Stop guessing addresses: use this page's search box or links to get there, or open another site where you know the exact address of the page you need.`
+          : worn || rereads
+            ? `You keep repeating ${worn ? `“${worn.slice(0, 80)}”` : 'reads of this page'}; what this page shows is already in your notes. Finish now with what you have (say "not shown" for anything missing), or do something different that the goal still needs.`
+            : warning;
     // Cheap reads first: the element list and page text are enough on most pages and a step with a
     // screenshot costs about four times as long (Stage 0). Look at the picture only when the last
     // step failed, or when the page has too little text to act on.
     const thin = look.text.trim().length < 200 || look.elements.length < 3;
     const withImage = failStreak > 0 || (thin && look.url !== lastImageUrl);
     if (withImage) lastImageUrl = look.url;
+    const timing: Partial<StepTiming> = {};
     const tDecide = Date.now();
     let decision: StepDecision;
     try {
@@ -316,6 +351,8 @@ export async function runLane(
       );
       addUsage(reply.usage);
       decision = reply.value;
+      timing.wait = reply.waitMs;
+      timing.model = reply.callMs;
     } catch (e) {
       // Keep the model's raw reply in the receipt so a bad output can be diagnosed later.
       await receipts.event('error', {
@@ -358,7 +395,7 @@ export async function runLane(
         gate,
         gateSummary,
         verdict,
-        ms: { decide: decideMs, act: Date.now() - tAct, total: Date.now() - tDecide },
+        ms: { ...timing, decide: decideMs, act: Date.now() - tAct, total: Date.now() - tDecide },
       };
       await receipts.step(rec, screenshot ?? before.screenshot);
       history.push({
@@ -420,16 +457,16 @@ export async function runLane(
       continue;
     }
     if (action.tool === 'read' || action.tool === 'extract_list') {
-      // Re-reading the same page does not add facts: the third read in a row is refused.
-      const reads = history
-        .slice(-4)
-        .filter(
-          (h) => (h.action.startsWith('read') || h.action.startsWith('extract_list')) && h.page === look.url,
-        ).length;
-      if (reads >= 2) {
+      // One read per page visit: a read notes everything on the page the goal needs, so reading the
+      // same page again straight away adds nothing (measured: parallel lanes read pages two or three
+      // times in a row, each read a model call of about 2.5 s).
+      const prev = history.at(-1);
+      const readAgain =
+        !!prev && (prev.action.startsWith('read') || prev.action.startsWith('extract_list')) && prev.page === look.url;
+      if (readAgain) {
         verdict = {
           ok: false,
-          note: 'you have read this page twice already; its facts are in your notes. Act, or finish with what you have (say "not shown" for anything missing).',
+          note: 'you just read this page; everything on it that the goal needs is in your notes. Act, or finish with what you have (say "not shown" for anything missing).',
         };
         failStreak++;
         await record();
@@ -537,6 +574,7 @@ export async function runLane(
         }
       }
 
+      const tAction = Date.now();
       switch (action.tool) {
         case 'open_url':
           await hands.open(action.url);
@@ -594,13 +632,19 @@ export async function runLane(
           break;
         }
       }
+      timing.action = Date.now() - tAction;
+      const tLook = Date.now();
       after = await hands.look(true);
+      timing.look = Date.now() - tLook;
+      Object.assign(timing, after.timing ?? {});
+      const tVerify = Date.now();
       // Canvas editors are checked by reading the file back, not by looking at the page.
       if (action.tool === 'sheet_write')
         verdict = checkWritten(action.rows.flat(), await need(hands.sheetRead, 'Reading a sheet').call(hands));
       else if (action.tool === 'doc_write')
         verdict = checkWritten(action.text.split(/\n+/), await need(hands.docRead, 'Reading a document').call(hands));
       else verdict = verify(action, before, after, target);
+      timing.verify = Date.now() - tVerify;
     } catch (e) {
       verdict = { ok: false, note: (e as Error).message.slice(0, 200) };
       after = await hands.look(true).catch(() => before);

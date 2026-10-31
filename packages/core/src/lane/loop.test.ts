@@ -526,12 +526,18 @@ describe('lane loop: revisit limit', () => {
 });
 
 describe('lane loop: read limit', () => {
-  it('refuses a third read of the same page in a row', async () => {
+  it('refuses reading the same page again straight away', async () => {
     const read = { action: { tool: 'read' as const, what: 'everything' } };
-    const brain = new FakeBrain([read, read, read, { action: { tool: 'finish', result: 'ok' } }]);
-    const { receipts } = await run({ goal: 'g' }, new FakeHands(), brain, new FakePerson());
-    expect(receipts.steps.map((s) => s.verdict.ok)).toEqual([true, true, false, true]);
-    expect(receipts.steps[2]!.verdict.note).toMatch(/read this page twice already/);
+    const brain = new FakeBrain([
+      read,
+      read,
+      { action: { tool: 'scroll' as const, direction: 'down' as const } },
+      read,
+      { action: { tool: 'finish', result: 'ok' } },
+    ]);
+    const { receipts } = await run({ goal: 'g' }, new FakeHands('/long'), brain, new FakePerson());
+    expect(receipts.steps.map((s) => s.verdict.ok)).toEqual([true, false, true, true, true]);
+    expect(receipts.steps[1]!.verdict.note).toMatch(/you just read this page/);
   });
 });
 
@@ -620,5 +626,37 @@ describe('lane loop: real-site helpers', () => {
       person,
     );
     expect(person.added).toEqual(['app.test: Results load after pressing Enter']);
+  });
+});
+
+describe('lane loop: going round in circles', () => {
+  it('warns a lane that keeps repeating an action between reads, and tells it to finish', async () => {
+    const hands = new FakeHands('/long');
+    const brain = new FakeBrain([
+      { action: { tool: 'scroll', direction: 'down' } },
+      { action: { tool: 'read', what: 'a' } },
+      { action: { tool: 'scroll', direction: 'down' } },
+      { action: { tool: 'read', what: 'b' } },
+      { action: { tool: 'scroll', direction: 'down' } },
+      { action: { tool: 'finish', result: 'done' } },
+    ]);
+    await run({ goal: 'g' }, hands, brain, new FakePerson());
+    expect(brain.userText(4)).not.toContain('You keep repeating');
+    expect(brain.userText(5)).toContain('You keep repeating');
+  });
+});
+
+describe('lane loop: guessing addresses', () => {
+  it('warns a lane that keeps guessing addresses on one site', async () => {
+    const hands = new FakeHands('/');
+    const brain = new FakeBrain([
+      ...['/a', '/b', '/c', '/d'].map((p) => ({
+        action: { tool: 'open_url' as const, url: `http://app.test${p === '/a' ? '/new' : '/long'}?try=${p.slice(1)}` },
+      })),
+      { action: { tool: 'finish', result: 'done' } },
+    ]);
+    await run({ goal: 'g' }, hands, brain, new FakePerson());
+    expect(brain.userText(3)).not.toContain('Stop guessing addresses');
+    expect(brain.userText(4)).toContain('Stop guessing addresses');
   });
 });

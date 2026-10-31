@@ -45,6 +45,8 @@ export class ModelBrain implements Brain {
       reasoning: r.reasoning,
       ms: r.ms,
       usage: r.usage && { input: r.usage.input, output: r.usage.output },
+      waitMs: r.waitMs,
+      callMs: r.callMs,
     };
   }
   // Lane steps use the model's native tool calling, which it follows far more reliably than a
@@ -67,6 +69,8 @@ export class ModelBrain implements Brain {
       reasoning: r.reasoning,
       ms: r.ms,
       usage: r.usage && { input: r.usage.input, output: r.usage.output },
+      waitMs: r.waitMs,
+      callMs: r.callMs,
     };
   }
   read(messages: LaneMessage[]) {

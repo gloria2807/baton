@@ -104,7 +104,9 @@ export function animateCursor(x: number, y: number): Promise<void> {
     from.y = window.innerHeight - 40;
   }
   const dist = Math.hypot(x - from.x, y - from.y);
-  const duration = Math.min(900, 280 + dist * 0.6);
+  // Long enough to follow on camera, short enough not to slow a lane (measured: glides were up to
+  // 0.9 s of every action).
+  const duration = Math.min(500, 180 + dist * 0.35);
   const bend = Math.min(80, dist * 0.18);
   const nx = -(y - from.y) / (dist || 1);
   const ny = (x - from.x) / (dist || 1);
@@ -309,6 +311,17 @@ export function collect(showMarks: boolean): CollectResult {
     )
       value = String(i.value).slice(0, 4000);
     else if (['checkbox', 'radio'].includes(i.type)) value = i.checked ? 'checked' : 'unchecked';
+    // Tabs, accordions and toggles: their state is what a click changes, so the check can see it.
+    else {
+      const state = [
+        el.getAttribute('aria-selected') === 'true' && 'selected',
+        el.getAttribute('aria-expanded') === 'true' && 'expanded',
+        el.getAttribute('aria-expanded') === 'false' && 'collapsed',
+        el.getAttribute('aria-pressed') === 'true' && 'pressed',
+        !!el.getAttribute('aria-current') && el.getAttribute('aria-current') !== 'false' && 'current',
+      ].filter(Boolean);
+      if (state.length) value = state.join(' ');
+    }
     elements.push({
       mark,
       tag,
@@ -336,7 +349,8 @@ export function collect(showMarks: boolean): CollectResult {
     scroll: { x: window.scrollX, y: window.scrollY },
     dpr: window.devicePixelRatio,
     elements,
-    text: (document.body?.innerText ?? '').replace(/\n{3,}/g, '\n\n').slice(0, 12000),
+    // Long pages: keep enough text that a change far down the page is still seen by the check.
+    text: (document.body?.innerText ?? '').replace(/\n{3,}/g, '\n\n').slice(0, 40000),
     hidden: hiddenText(),
   };
 }

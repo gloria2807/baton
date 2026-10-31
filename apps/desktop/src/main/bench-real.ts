@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   CueMove,
+  partGoal,
   Profile,
   Score,
   cueMessages,
@@ -40,6 +41,8 @@ interface Run {
   person: string[]; // what needed the person: questions, declined approvals, bot checks
   cleared: number; // consent banners and pop-ups Baton cleared
   stoppedByOverlay: boolean;
+  receipts: string[]; // each lane's receipts folder, for the speed breakdown
+  planMs?: number; // conductor planning, reported apart from the lanes
 }
 
 interface Row {
@@ -156,6 +159,7 @@ async function oneLane(
     lanes: 1,
     person,
     ...receiptFacts(out.receipts, out),
+    receipts: [out.receipts],
   };
 }
 
@@ -193,6 +197,7 @@ async function conductor(
   const outcomes: Array<LaneOutcome & { receipts: string }> = [];
   const t0 = Date.now();
   let slot = 0;
+  model.governor?.ensureConcurrency(4);
   const results = await runScore(score, {
     limit: 4,
     runPart: async (part) => {
@@ -202,7 +207,7 @@ async function conductor(
         laneId: `${task.id.slice(0, 14)}-${attempt}-${part.id}`.replace(/[^a-z0-9-]/g, '-').slice(0, 32),
         name: part.name,
         color: LANE_COLORS[i % LANE_COLORS.length]!,
-        spec: { goal: part.goal, startUrl: part.startUrl, preApproved: preApproval(task) },
+        spec: { goal: partGoal(part.goal), startUrl: part.startUrl, preApproved: preApproval(task) },
         bounds: bounds[slot++ % bounds.length],
       });
       outcomes.push(out);
@@ -226,6 +231,7 @@ async function conductor(
     person,
     cleared: facts.reduce((a, f) => a + f.cleared, 0),
     stoppedByOverlay: facts.some((f) => f.stoppedByOverlay),
+    receipts: outcomes.map((o) => o.receipts),
   };
 }
 
@@ -233,6 +239,7 @@ export interface RealBenchOptions {
   only?: string[];
   repeat?: number;
   multi?: boolean; // run the multi-part requests (both modes) instead of the single-lane tasks
+  label?: string; // heading for bench/results-speed.md, e.g. "before" or "after"
 }
 
 export async function runRealBench(bridge: BridgeServer, model: Model, opts: RealBenchOptions = {}) {
@@ -256,7 +263,9 @@ export async function runRealBench(bridge: BridgeServer, model: Model, opts: Rea
           const run = await oneLane(bridge, model, task, task.request, runId, laneId);
           rows.push({ id: task.id, kind: task.kind, mode: 'one lane', attempt, run });
         } else {
+          const tPlan = Date.now();
           const score = await plan(model, task);
+          const planMs = Date.now() - tPlan;
           const seqGoal = `Do all of these, one after another, then finish with every result:\n${score.parts.map((p, i) => `${i + 1}. ${p.goal}`).join('\n')}`;
           const seq = await oneLane(
             bridge,
@@ -267,7 +276,7 @@ export async function runRealBench(bridge: BridgeServer, model: Model, opts: Rea
             `${laneId}-seq`.slice(0, 32),
           );
           rows.push({ id: task.id, kind: task.kind, mode: 'one lane, all parts', attempt, run: seq });
-          const par = await conductor(bridge, model, task, score, runId, attempt);
+          const par = { ...(await conductor(bridge, model, task, score, runId, attempt)), planMs };
           rows.push({ id: task.id, kind: task.kind, mode: 'conductor', attempt, run: par });
         }
       } catch (e) {
@@ -294,6 +303,7 @@ export async function runRealBench(bridge: BridgeServer, model: Model, opts: Rea
   );
   const done = rows.filter((r) => r.run);
   const pass = done.filter((r) => r.run!.ok).length;
+  if (opts.multi) writeSpeed(rows, runId, opts.label ?? '');
   const cell = (s: string) => s.replace(/\|/g, '/').replace(/\n/g, ' ');
   const table = [
     `## ${opts.multi ? 'Multi-part requests' : 'Everyday tasks'} on real websites (${runId})`,
@@ -318,4 +328,94 @@ export async function runRealBench(bridge: BridgeServer, model: Model, opts: Rea
   writeFileSync(out, `${prior}${table}\n`);
   log(`BENCH_REAL_DONE ${pass}/${rows.length} passed`);
   return rows;
+}
+
+// ── Speed: where each lane step's time went (docs/FOCUS.md section 1) ──
+
+interface StepMs {
+  decide: number;
+  act: number;
+  total: number;
+  wait?: number;
+  model?: number;
+  action?: number;
+  look?: number;
+  settle?: number;
+  tidy?: number;
+  collect?: number;
+  screenshot?: number;
+  verify?: number;
+}
+
+function stepsOf(dirs: string[]): Array<{ ms: StepMs; usedScreenshot: boolean; action: { tool: string } }> {
+  return dirs.flatMap((d) => {
+    const f = join(d, 'steps.jsonl');
+    if (!existsSync(f)) return [];
+    return readFileSync(f, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { ms: StepMs; usedScreenshot: boolean; action: { tool: string } });
+  });
+}
+
+function writeSpeed(rows: Row[], runId: string, label: string) {
+  const s1 = (ms: number) => (ms / 1000).toFixed(2);
+  const modes = ['one lane, all parts', 'conductor'] as const;
+  const parts: Array<keyof StepMs> = [
+    'decide',
+    'wait',
+    'model',
+    'action',
+    'look',
+    'settle',
+    'tidy',
+    'collect',
+    'screenshot',
+    'verify',
+    'total',
+  ];
+  const breakdown = modes.map((mode) => {
+    const steps = stepsOf(rows.filter((r) => r.mode === mode && r.run).flatMap((r) => r.run!.receipts));
+    const avg = (k: keyof StepMs) =>
+      steps.length ? steps.reduce((a, st) => a + (st.ms[k] ?? 0), 0) / steps.length : 0;
+    const shots = steps.filter((st) => st.usedScreenshot).length;
+    // Settling is only needed after a navigation; split it so the two kinds of step are not averaged together.
+    const nav = (st: (typeof steps)[number]) => ['open_url', 'back', 'search_site'].includes(st.action.tool);
+    const settleOf = (xs: typeof steps) =>
+      xs.length ? s1(xs.reduce((a, st) => a + (st.ms.settle ?? 0), 0) / xs.length) : '-';
+    return `| ${mode} | ${steps.length} | ${parts.map((k) => s1(avg(k))).join(' | ')} | ${settleOf(steps.filter(nav))} (${steps.filter(nav).length}) | ${settleOf(steps.filter((st) => !nav(st) && st.ms.look !== undefined))} | ${steps.length ? Math.round((shots / steps.length) * 100) : 0}% |`;
+  });
+  const tasks = [...new Set(rows.map((r) => r.id))];
+  const perTask = tasks.flatMap((id) => {
+    const seq = rows.filter((r) => r.id === id && r.mode === 'one lane, all parts' && r.run);
+    const par = rows.filter((r) => r.id === id && r.mode === 'conductor' && r.run);
+    return seq.map((sq, i) => {
+      const pr = par[i];
+      const a = sq.run!;
+      const b = pr?.run;
+      return `| ${id} | ${b?.lanes ?? '-'} | ${a.ok ? 'pass' : '**fail**'} ${a.seconds.toFixed(0)} s, ${a.steps} steps | ${b ? `${b.ok ? 'pass' : '**fail**'} ${b.seconds.toFixed(0)} s, ${b.steps} steps` : '-'} | ${b?.planMs !== undefined ? s1(b.planMs) : '-'} | ${b ? `${(a.seconds / b.seconds).toFixed(1)}×` : '-'} |`;
+    });
+  });
+  const md = [
+    `## ${label ? `${label}: ` : ''}${runId}`,
+    '',
+    'Average seconds per lane step, from every lane receipt in the run. "decide" includes the governor wait and the model call; "look" is the look after the action and includes settle, tidy, collect and screenshot.',
+    '',
+    `| Mode | Steps | ${parts.join(' | ')} | settle after navigating (steps) | settle otherwise | Steps with a screenshot sent |`,
+    `|---|---|${parts.map(() => '---').join('|')}|---|---|---|`,
+    ...breakdown,
+    '',
+    'Wall time per request. Planning is reported apart; the conductor time excludes it, and one lane runs the same planned parts.',
+    '',
+    '| Request | Lanes | One lane, all parts | Conductor | Planning (s) | Speed-up |',
+    '|---|---|---|---|---|---|',
+    ...perTask,
+    '',
+  ].join('\n');
+  const out = join(repoRoot, 'bench', 'results-speed.md');
+  const prior = existsSync(out)
+    ? readFileSync(out, 'utf8')
+    : "# Baton — where the time goes in parallel lanes\n\nMeasured on real websites in the person's own Chrome (docs/FOCUS.md section 1). Runner: `--bench-real-multi --label=…`.\n\n";
+  writeFileSync(out, `${prior}${md}\n`);
 }

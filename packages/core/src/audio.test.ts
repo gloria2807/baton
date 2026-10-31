@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CUE_SAMPLE_RATE, cueWav, encodeWav, resample, rms } from './audio.js';
+import { CUE_SAMPLE_RATE, cueWav, encodeWav, resample, rms, decodeWav, trimSilence } from './audio.js';
 
 describe('cue audio', () => {
   it('writes a valid 16-bit mono WAV header', () => {
@@ -37,5 +37,27 @@ describe('cue audio', () => {
 
   it('measures silence as zero', () => {
     expect(rms(new Float32Array(100))).toBe(0);
+  });
+});
+
+describe('trimSilence', () => {
+  it('keeps the speech and a short margin, and drops the silence around it', () => {
+    const rate = 16000;
+    const speech = Float32Array.from({ length: rate }, (_, i) => 0.3 * Math.sin(i / 5));
+    const padded = new Float32Array(rate * 3);
+    padded.set(speech, rate); // 1 s silence, 1 s speech, 1 s silence
+    const t = trimSilence(padded, rate, 0.15);
+    expect(t.length / rate).toBeGreaterThan(1.2);
+    expect(t.length / rate).toBeLessThan(1.4);
+  });
+  it('leaves pure silence alone (it is rejected elsewhere)', () => {
+    const s = new Float32Array(16000);
+    expect(trimSilence(s, 16000).length).toBe(16000);
+  });
+  it('reads back what it wrote', () => {
+    const s = Float32Array.from({ length: 800 }, (_, i) => Math.sin(i / 7) * 0.5);
+    const { samples, sampleRate } = decodeWav(encodeWav(s, 16000));
+    expect(sampleRate).toBe(16000);
+    expect(Math.abs(samples[100]! - s[100]!)).toBeLessThan(1e-3);
   });
 });

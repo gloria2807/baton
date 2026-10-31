@@ -277,6 +277,100 @@ export class Model {
     throw new ModelOutputError(`model output invalid after retry: ${lastError}`, lastRaw);
   }
 
+  // One streamed JSON answer. `onReasoning` and `onContent` get the text so far as it arrives; the
+  // finished answer is validated with `schema`, and an invalid one is asked for again (unstreamed)
+  // with the error, as json() does. Usage counts against the governor like any other call.
+  async streamJson<T>(
+    schema: z.ZodType<T>,
+    messages: Message[],
+    effort: Effort,
+    on: { onReasoning?: (all: string) => void; onContent?: (all: string) => void },
+  ): Promise<Completion<T>> {
+    const t0 = performance.now();
+    let content = '';
+    let reasoning = '';
+    let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
+    const run = async () => {
+      content = '';
+      reasoning = '';
+      const stream = (await this.client.chat.completions.create({
+        model: MODEL,
+        messages,
+        max_tokens: 8000,
+        reasoning_effort: effort,
+        stream: true,
+        stream_options: { include_usage: true },
+      } as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming)) as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
+      for await (const chunk of stream) {
+        const d = chunk.choices[0]?.delta as { content?: string | null; reasoning_content?: string | null } | undefined;
+        if (d?.reasoning_content) {
+          reasoning += d.reasoning_content;
+          on.onReasoning?.(reasoning);
+        }
+        if (d?.content) {
+          content += d.content;
+          on.onContent?.(content);
+        }
+        if (chunk.usage) usage = chunk.usage;
+      }
+      // If the server sends no usage, count an over-estimate rather than nothing, so the budget holds.
+      usage ??= {
+        prompt_tokens: Math.ceil(JSON.stringify(messages).length / 3),
+        completion_tokens: Math.ceil((content.length + reasoning.length) / 3),
+      };
+      return { usage };
+    };
+    await (this.governor ? this.governor.run(run) : run());
+    try {
+      const value = schema.parse(extractJson(content));
+      return {
+        value,
+        reasoning,
+        ms: performance.now() - t0,
+        usage: usage && { input: usage.prompt_tokens ?? 0, output: usage.completion_tokens ?? 0 },
+      };
+    } catch (e) {
+      const error = e instanceof z.ZodError ? z.prettifyError(e) : (e as Error).message;
+      return this.json(
+        schema,
+        [
+          ...messages,
+          { role: 'assistant', content },
+          {
+            role: 'user',
+            content: `That reply was not valid: ${error}\nReply again with only the JSON object, in exactly the requested shape.`,
+          },
+        ],
+        effort,
+      );
+    }
+  }
+
+  // Opens the connection to Baseten while the person is still speaking, so the call after release
+  // does not wait for TLS. Listing models is free.
+  warm(): void {
+    void this.client.models.list().catch(() => undefined);
+  }
+
+  // The fast voice pipeline: the padded recording plus the pins and profile, in one streamed call.
+  listen<T>(
+    schema: z.ZodType<T>,
+    wav: Uint8Array,
+    system: string,
+    text: string,
+    on: { onReasoning?: (all: string) => void; onContent?: (all: string) => void },
+  ): Promise<Completion<T>> {
+    return this.streamJson(
+      schema,
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: [{ type: 'text', text }, audioPart(wav)] },
+      ],
+      'low',
+      on,
+    );
+  }
+
   // Push-to-talk audio (padded 16 kHz WAV) → transcript and intent.
   transcribeCue(wav: Uint8Array): Promise<Completion<CueHeard>> {
     return this.json(CueHeard, [

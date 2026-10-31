@@ -24,6 +24,10 @@ import {
   MergeReply,
   Score,
   cueMessages,
+  ListenReply,
+  LISTEN_SYSTEM,
+  listenText,
+  PlanStream,
   goalWithProfile,
   manualMinutes,
   mapDeixis,
@@ -170,6 +174,20 @@ export const SITES = `Known sites (fictional demo sites, prefer them when the re
 - Roam, travel search (flights from/to airport codes LOS LIS ACC LHR NBO MAD, hotels near Doca Hall Lisbon, Atlas Summit event guide): http://localhost:4402/ (hotels: http://localhost:4402/hotels, event: http://localhost:4402/events/atlas-summit)
 For anything else use the real public website that best fits (e.g. https://www.google.com/maps, https://www.openstreetmap.org, https://www.wikipedia.org).`;
 
+const STOP_WORDS = /\b(everyone|everybody|all lanes)\b.*\bstop\b|^\s*stop everything\b/i;
+
+// One short line of the model's reasoning: the latest phrase, not the whole text.
+export function thinkingLine(all: string): string {
+  const tail =
+    all
+      .replace(/\s+/g, ' ')
+      .trim()
+      .split(/(?<=[.!?…])\s+/)
+      .filter(Boolean)
+      .at(-1) ?? '';
+  return tail.length > 90 ? `…${tail.slice(-89)}` : tail;
+}
+
 export class Conductor {
   private cards = new Map<number, Pending>();
   private nextCard = 1;
@@ -178,6 +196,8 @@ export class Conductor {
   private laneCount = 0;
   private run: ScoreRunState | null = null;
   busy = false;
+  // Voice timing (docs/NEXT.md section 3): marks from key release to the first lane at work.
+  timing: ((mark: 'heard' | 'planned' | 'part' | 'lane-open' | 'answered', detail?: string) => void) | null = null;
 
   constructor(
     private bridge: BridgeServer,
@@ -339,6 +359,7 @@ export class Conductor {
     this.publishLanes();
     try {
       const out = await launchLane(this.bridge, model, this.supervisorFor(laneId, opts.name, color), {
+        onOpen: () => this.timing?.('lane-open'),
         runId: `cue-${new Date().toISOString().replace(/[:.]/g, '-')}`,
         laneId,
         name: opts.name,
@@ -369,62 +390,81 @@ export class Conductor {
   // ── Scores: several lanes at once ─────────────────────────────────────
 
   async runScoreCue(score: Score, opts: ScoreOptions = {}) {
+    const run = this.beginScore(opts, Math.min(score.parts.length, opts.limit ?? DEFAULT_LANE_LIMIT));
+    if (!run) return;
+    score.parts.forEach((part, i) => this.addPart(run, part, i));
+    await this.executeScore(run, score, new Map());
+  }
+
+  // A Score run can begin before its plan is complete (the fast voice pipeline starts lanes as parts
+  // arrive): begin the run, add parts as they come, then execute once the whole plan is known.
+  private beginScore(opts: ScoreOptions, slots: number): ScoreRunState | null {
     const model = this.getModel();
     if (!model || !this.bridge.connected) {
       this.send(
         'podium:notice',
         model ? 'The Chrome extension is not connected.' : 'No Baseten key: Baton cannot run lanes.',
       );
-      return;
+      return null;
     }
     if (this.busy) {
       this.send('podium:notice', 'Lanes are already running. Say “everyone stop” to stop them.');
-      return;
+      return null;
     }
     this.busy = true;
-    const runId = `score-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-    const slots = Array(Math.min(score.parts.length, opts.limit ?? DEFAULT_LANE_LIMIT)).fill(false);
     const run: ScoreRunState = {
-      score,
-      runId,
+      score: { title: 'Planning…', parts: [], final: '' } as unknown as Score,
+      runId: `score-${new Date().toISOString().replace(/[:.]/g, '-')}`,
       startedAt: Date.now(),
       parts: new Map(),
       pending: [],
       bundleAnswered: false,
       spoke: false,
       opts,
-      slots,
+      slots: Array(Math.max(1, slots)).fill(false),
     };
     this.run = run;
-    score.parts.forEach((part, i) => {
-      const st: PartState = {
-        part,
-        laneId: `${part.id}`.slice(0, 24),
-        color: LANE_COLORS[i % LANE_COLORS.length]!,
-        state: 'waiting',
-        inbox: [],
-        attempt: 1,
-        receipts: [],
-      };
-      run.parts.set(part.id, st);
-      // Many short parts (a performed routine) show a chip only while they run.
-      if (!opts.closeWhenDone)
-        this.lanes.set(st.laneId, {
-          laneId: st.laneId,
-          name: part.name,
-          color: st.color,
-          state: 'running',
-          line: 'Waiting to start…',
-          step: 0,
-        });
-    });
+    return run;
+  }
+
+  private addPart(run: ScoreRunState, part: Part, i: number) {
+    if (run.parts.has(part.id)) return;
+    const st: PartState = {
+      part,
+      laneId: `${part.id}`.slice(0, 24),
+      color: LANE_COLORS[i % LANE_COLORS.length]!,
+      state: 'waiting',
+      inbox: [],
+      attempt: 1,
+      receipts: [],
+    };
+    run.parts.set(part.id, st);
+    // Many short parts (a performed routine) show a chip only while they run.
+    if (!run.opts.closeWhenDone)
+      this.lanes.set(st.laneId, {
+        laneId: st.laneId,
+        name: part.name,
+        color: st.color,
+        state: 'running',
+        line: 'Waiting to start…',
+        step: 0,
+      });
     this.publishLanes();
-    log(`score ${runId}: ${score.parts.length} parts`);
+  }
+
+  // `started`: parts already running from the streamed plan; the scheduler waits for them.
+  private async executeScore(run: ScoreRunState, score: Score, started: Map<string, Promise<PartResult>>) {
+    run.score = score;
+    score.parts.forEach((part, i) => this.addPart(run, part, i));
+    const opts = run.opts;
+    log(
+      `score ${run.runId}: ${score.parts.length} parts${started.size ? ` (${started.size} started while planning)` : ''}`,
+    );
     this.send('podium:notice', `${score.title}: ${score.parts.length} lanes`);
     try {
       await runScore(score, {
         limit: opts.limit ?? DEFAULT_LANE_LIMIT,
-        runPart: (part) => this.runPart(run, part),
+        runPart: (part) => started.get(part.id) ?? this.runPart(run, part),
         onUpdate: (u) => {
           const st = run.parts.get(u.id);
           if (!st) return;
@@ -442,14 +482,25 @@ export class Conductor {
       });
       await this.finishScore(run);
     } finally {
-      for (const st of run.parts.values()) {
-        this.lanes.delete(st.laneId);
-        this.stopRequested.delete(st.laneId);
-      }
-      this.publishLanes();
-      this.run = null;
-      this.busy = false;
+      this.endRun(run);
     }
+  }
+
+  private endRun(run: ScoreRunState) {
+    for (const st of run.parts.values()) {
+      this.lanes.delete(st.laneId);
+      this.stopRequested.delete(st.laneId);
+    }
+    this.publishLanes();
+    this.run = null;
+    this.busy = false;
+  }
+
+  // A plan that turned out not to be a Score (or failed): stop the lanes it started.
+  private async abandonRun(run: ScoreRunState, started: Map<string, Promise<PartResult>>) {
+    for (const st of run.parts.values()) this.stopRequested.add(st.laneId);
+    await Promise.allSettled(started.values());
+    this.endRun(run);
   }
 
   private async runPart(run: ScoreRunState, part: Part): Promise<PartResult> {
@@ -474,6 +525,7 @@ export class Conductor {
     for (;;) {
       st.state = 'running';
       const out = await launchLane(this.bridge, model, this.scoreSupervisor(run, st), {
+        onOpen: () => this.timing?.('lane-open'),
         runId: run.runId,
         laneId: st.laneId,
         name: part.name,
@@ -869,10 +921,97 @@ export class Conductor {
 
   // A cue that is not an answer to a card: interpret what was said and pointed at, then answer
   // aloud, run one lane or a Score of several, or move data from "this" to "there".
-  async fromCue(cue: { id: string; transcript: string; intent: string; anchors: Anchor[]; heldMs: number }) {
+  // The fast voice pipeline (docs/NEXT.md section 3): one streamed call hears the audio, reads the
+  // pins and profile and plans. The transcript is shown the moment it is parsed; each part of a
+  // Score is shown, and a part with no dependencies is started, the moment its JSON is complete.
+  async fromAudio(
+    cue: { id: string; wav: Uint8Array; anchors: Anchor[]; heldMs: number },
+    onTranscript?: (t: string) => void,
+  ): Promise<void> {
     const model = this.getModel();
     if (!model) return;
-    if (/\b(everyone|everybody|all lanes)\b.*\bstop\b|^\s*stop everything\b/i.test(cue.transcript)) {
+    const stream = new PlanStream();
+    const started = new Map<string, Promise<PartResult>>();
+    let run: ScoreRunState | null = null;
+    let order = 0;
+    let lastLine = 0;
+    let lines = 0;
+    // Lanes may start from the stream only for a plain request: not an answer to a waiting card, a
+    // routine command, "everyone stop", or words for one lane.
+    const plain = (t: string) =>
+      !this.rehearsal &&
+      !routineCommand(t) &&
+      !STOP_WORDS.test(t) &&
+      !cue.anchors.some((a) => a.laneId) &&
+      ![...this.cards.values()].some((p) => ['approval', 'question', 'injection'].includes(p.card.kind));
+    try {
+      const r = await model.listen(
+        ListenReply,
+        cue.wav,
+        LISTEN_SYSTEM,
+        listenText({ anchors: cue.anchors, profile: this.getProfile(), sites: SITES, heldMs: cue.heldMs }),
+        {
+          // The model's reasoning, as one line that rewrites itself while the person waits.
+          onReasoning: (all) => {
+            if (Date.now() - lastLine < 300) return;
+            lastLine = Date.now();
+            lines++;
+            this.send('thinking', thinkingLine(all));
+          },
+          onContent: (all) => {
+            const f = stream.feed(all);
+            if (f.transcript !== undefined) {
+              this.timing?.('heard');
+              onTranscript?.(f.transcript);
+              if (STOP_WORDS.test(f.transcript)) this.stopAll();
+            }
+            for (const part of f.parts) {
+              this.timing?.('part');
+              if (!plain(stream.transcript ?? '')) continue;
+              run ??= this.beginScore({}, Math.min(stream.partCount ?? DEFAULT_LANE_LIMIT, DEFAULT_LANE_LIMIT));
+              if (!run) continue;
+              this.addPart(run, part, order++);
+              if (!part.dependsOn.length && started.size < DEFAULT_LANE_LIMIT)
+                started.set(part.id, this.runPart(run, part));
+            }
+          },
+        },
+      );
+      const heard = r.value;
+      log(
+        `cue ${cue.id} heard and planned in one call: “${heard.transcript}” → ${heard.move.kind} (${Math.round(r.ms)} ms, ${lines} reasoning updates, ${started.size} lanes started early)`,
+      );
+      this.timing?.('planned', heard.move.kind);
+      this.send('sound', 'plan');
+      const startedRun = run as ScoreRunState | null;
+      if (startedRun) {
+        const score = heard.move.kind === 'score' ? Score.safeParse(heard.move) : null;
+        if (score?.success) return await this.executeScore(startedRun, score.data, started);
+        await this.abandonRun(startedRun, started);
+      }
+      if (!heard.transcript.trim()) {
+        this.send('podium:notice', 'I didn’t catch that.');
+        return;
+      }
+      if (this.answerByVoice(heard.transcript, cue.anchors.length > 0)) return;
+      await this.fromCue(
+        { id: cue.id, transcript: heard.transcript, intent: heard.intent, anchors: cue.anchors, heldMs: cue.heldMs },
+        heard.move,
+      );
+    } catch (e) {
+      const startedRun = run as ScoreRunState | null;
+      if (startedRun) await this.abandonRun(startedRun, started);
+      this.send('podium:notice', `Could not understand that: ${(e as Error).message}`);
+    }
+  }
+
+  async fromCue(
+    cue: { id: string; transcript: string; intent: string; anchors: Anchor[]; heldMs: number },
+    planned?: CueMove,
+  ) {
+    const model = this.getModel();
+    if (!model) return;
+    if (STOP_WORDS.test(cue.transcript)) {
       this.stopAll();
       return;
     }
@@ -904,24 +1043,30 @@ export class Conductor {
       references,
     };
     try {
-      const r = await model.json(
-        CueMove,
-        toOpenAI(
-          cueMessages({
-            transcript: cue.transcript,
-            intent: cue.intent,
-            anchors: cue.anchors,
-            references,
-            profile: this.getProfile(),
-            sites: SITES,
-          }),
-        ),
-        'low',
-      );
-      const move = r.value;
+      const t0 = Date.now();
+      const move =
+        planned ??
+        (
+          await model.json(
+            CueMove,
+            toOpenAI(
+              cueMessages({
+                transcript: cue.transcript,
+                intent: cue.intent,
+                anchors: cue.anchors,
+                references,
+                profile: this.getProfile(),
+                sites: SITES,
+              }),
+            ),
+            'low',
+          )
+        ).value;
       record.move = move;
-      record.ms = Math.round(r.ms);
-      log(`cue ${cue.id} → ${move.kind} (${Math.round(r.ms)} ms, ${cue.anchors.length} anchors)`);
+      record.ms = Date.now() - t0;
+      record.pipeline = planned ? 'fast' : 'classic';
+      if (!planned) this.timing?.('planned', move.kind);
+      log(`cue ${cue.id} → ${move.kind} (${record.ms} ms, ${cue.anchors.length} anchors)`);
       await this.perform(move, cue.anchors);
     } catch (e) {
       record.error = (e as Error).message;
@@ -935,6 +1080,7 @@ export class Conductor {
     const byN = (n: number) => anchors.find((a) => a.n === n);
     if (move.kind === 'answer' || move.kind === 'clarify') {
       const speech = move.kind === 'answer' ? move.speech : move.question;
+      this.timing?.('answered', move.kind);
       this.send('speak', speech);
       void this.show({
         kind: 'result',

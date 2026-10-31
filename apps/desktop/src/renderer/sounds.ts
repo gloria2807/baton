@@ -19,6 +19,12 @@ function tone(from: number, to: number, ms: number, gain = 0.06) {
 }
 
 export const sounds = {
+  // Key released: a soft tick at once, before anything else happens.
+  tick: () => tone(1400, 1100, 40, 0.035),
+  // The plan is ready: one low tone.
+  plan: () => tone(262, 262, 260, 0.04),
+  // A lane starts: a soft note.
+  laneStart: () => tone(523, 523, 140, 0.025),
   listen: () => tone(620, 930, 120),
   release: () => tone(930, 560, 140),
   heard: () => {

@@ -55,3 +55,35 @@ export function rms(samples: Float32Array): number {
   for (const s of samples) sum += s * s;
   return samples.length ? Math.sqrt(sum / samples.length) : 0;
 }
+
+// Cut the silence before and after the speech (keeping a short margin), so the model hears less
+// audio: audio length is most of the wait for an answer (measured in section 3 of docs/NEXT.md).
+export function trimSilence(
+  samples: Float32Array,
+  sampleRate: number,
+  marginSeconds = 0.15,
+  threshold = 0.012,
+): Float32Array {
+  const win = Math.max(1, Math.round(sampleRate * 0.02));
+  const loud = (start: number) => rms(samples.subarray(start, Math.min(samples.length, start + win))) >= threshold;
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < samples.length; i += win) {
+    if (loud(i)) {
+      if (first < 0) first = i;
+      last = i + win;
+    }
+  }
+  if (first < 0) return samples;
+  const margin = Math.round(marginSeconds * sampleRate);
+  return samples.subarray(Math.max(0, first - margin), Math.min(samples.length, last + margin));
+}
+
+export function decodeWav(wav: Uint8Array): { samples: Float32Array; sampleRate: number } {
+  const v = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  const sampleRate = v.getUint32(24, true);
+  const n = (wav.byteLength - 44) / 2;
+  const samples = new Float32Array(n);
+  for (let i = 0; i < n; i++) samples[i] = v.getInt16(44 + i * 2, true) / 0x8000;
+  return { samples, sampleRate };
+}

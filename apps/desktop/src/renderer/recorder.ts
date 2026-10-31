@@ -113,6 +113,18 @@ export class Recorder {
     return Math.min(1, Math.sqrt(sum / buf.length) * 6);
   }
 
+  // The audio captured so far, for live captions while the key is still held.
+  snapshot(): { samples: Float32Array; sampleRate: number } {
+    const length = this.chunks.reduce((n, c) => n + c.length, 0);
+    const samples = new Float32Array(length);
+    let off = 0;
+    for (const c of this.chunks) {
+      samples.set(c, off);
+      off += c.length;
+    }
+    return { samples, sampleRate: this.ready?.ctx.sampleRate ?? 48000 };
+  }
+
   async stop(): Promise<Recording> {
     // A very quick tap can release the key before the microphone has opened.
     this.recording = false;

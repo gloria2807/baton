@@ -22,3 +22,6 @@ export * from './score/tiling.js';
 export * from './score/merge.js';
 export * from './routine/rehearsal.js';
 export * from './routine/routine.js';
+export * from './hand/filter.js';
+export * from './hand/calibration.js';
+export * from './hand/gestures.js';

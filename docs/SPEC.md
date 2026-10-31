@@ -235,6 +235,13 @@ At $1.25 per million input tokens and $4.25 per million output tokens:
 - **Limits, against the running server:** with `LIVE_VISITOR_CALLS_PER_HOUR=2`, calls 1 and 2 returned 200 and call 3 returned 403 `visitor-rate`. With `LIVE_DAILY_BUDGET_USD=0.0001`, the first call returned 200, then every call (including from another visitor) returned 403 `daily-budget`. During development the $0.50 visitor share was also hit for real mid-run; the share is now $1.00 because one full "Get me there" costs $0.30–0.50.
 - **Key check:** `node scripts/check-live-key.mjs` scanned 8 built files and 11 responses (page, assets, demo shell, budget, a refused model call): the key appears in none. The variable name and Baseten's host appear in the bundle as constants of the shared model client; the browser never calls Baseten.
 
+## The conductor's hand (measured in section 2 of docs/NEXT.md, 2026-10-31)
+
+- MediaPipe Hand Landmarker 1.1.1 runs in the Podium on the laptop camera; only a pose and a pointing point per frame reach the main process. Calibration fits a homography from four corner targets; a One Euro filter smooths the pointer; a click-through overlay draws it.
+- **First measured run (person's laptop, dim room):** accuracy 0 of 9 targets within 40 px (errors 156–1126 px, median 639 px); gestures point 9/10, pinch 5/10, select a lane 1/10, open palm 2/10, two fingers 8/10; 1 false "everyone stop" in two minutes; tracking at about 15 frames per second.
+- **Causes found and fixed, not yet re-measured:** the pointer followed the fingertip, which a pinch drags toward the thumb (now the index knuckle, with each sample the median of the preceding half second); single-frame pose flicker restarted holds (now a 150 ms majority vote); the pinch rule rejected real pinches (now told from a fist by the index tip's distance from its own knuckle, in 3D); an open hand moving while talking could stop everyone (now the hand must be still for the half-second hold). The Podium and the log now report the processor (GPU or CPU) and the camera's frame rate.
+- **The gate has not passed.** The person could not re-run the checks in good light and asked to move on; re-running Calibrate, Check accuracy and Test gestures from the Podium measures it.
+
 ## Out of scope
 
 Controlling native desktop apps (read-only "what is this" questions about anything on screen are in scope), mobile apps, purchases without approval, storing payment details, and multiple monitors.

@@ -384,6 +384,28 @@ async function execute(c: Command): Promise<unknown> {
       await closeLane(lane(c.laneId));
       return true;
 
+    // Which Chrome window is under the point: a lane window first (they sit on top), then the focused
+    // one. Its page pins what is there; the reply says which pin and which lane, or none.
+    case 'pinAtScreen': {
+      const wins = await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] });
+      const inside = wins.filter(
+        (w) =>
+          w.state !== 'minimized' &&
+          w.left !== undefined &&
+          w.top !== undefined &&
+          c.x >= w.left &&
+          c.x < w.left + (w.width ?? 0) &&
+          c.y >= w.top &&
+          c.y < w.top + (w.height ?? 0),
+      );
+      const isLane = (w: chrome.windows.Window) => [...lanes.values()].some((l) => l.windowId === w.id);
+      const win = inside.find(isLane) ?? inside.find((w) => w.focused) ?? inside[0];
+      const tab = win?.tabs?.find((t) => t.active);
+      if (!win || tab?.id === undefined) return { n: null };
+      const n = await toTab<number | null>(tab.id, { kind: 'pinAt', cueId: c.cueId, x: c.x, y: c.y }).catch(() => null);
+      return { n, laneId: laneByTab(tab.id)?.laneId };
+    }
+
     case 'focusLane': {
       const l = lane(c.laneId);
       await chrome.windows.update(l.windowId, { focused: true, drawAttention: true });

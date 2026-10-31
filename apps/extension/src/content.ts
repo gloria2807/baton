@@ -20,7 +20,7 @@ import {
   setThinking,
   target,
 } from './page';
-import { onCue } from './pointer';
+import { onCue, pinAtScreen } from './pointer';
 
 chrome.runtime.onMessage.addListener((msg: ToContent, _sender, reply) => {
   (async () => {
@@ -54,6 +54,8 @@ chrome.runtime.onMessage.addListener((msg: ToContent, _sender, reply) => {
       case 'cue':
         onCue(msg);
         return true;
+      case 'pinAt':
+        return pinAtScreen(msg.cueId, msg.x, msg.y);
       case 'record':
         setRecording(msg.active);
         return true;

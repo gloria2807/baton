@@ -8,7 +8,9 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  net,
   powerMonitor,
+  protocol,
   screen,
   session,
   Tray,
@@ -26,6 +28,8 @@ import { BridgeServer } from './bridge-server';
 import { Conductor, type CardAnswer } from './conductor';
 import { listNotes, removeNote } from './site-notes';
 import { CueSession } from './cue';
+import { HandController, type HandFrame } from './hand';
+import { pathToFileURL } from 'node:url';
 import { openScoreView, registerScoreView, snapshotScoreView } from './score-view';
 import { log } from './log';
 import { dataDir, loadEnv, loadPairingToken, outDir } from './paths';
@@ -53,6 +57,8 @@ let tray: Tray | null = null;
 let bridge: BridgeServer;
 let model: Model | null = null;
 let conductor: Conductor;
+let hand: HandController;
+let pinSessionTimer: ReturnType<typeof setTimeout> | null = null;
 let profile = loadProfile();
 // The cue being spoken now, and the one whose audio is on its way to the model.
 let cueSession: CueSession | null = null;
@@ -204,7 +210,21 @@ async function handleCue(wav: Uint8Array, seconds: number) {
   }
 }
 
+// The hand tracker's WebAssembly runtime and model, served from the app's own files to the Podium.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'baton-asset',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
+  },
+]);
+
 app.whenReady().then(async () => {
+  protocol.handle('baton-asset', (req) => {
+    const u = new URL(req.url);
+    const rel = decodeURIComponent(u.pathname).replace(/^\/+/, '');
+    if (u.host !== 'hand' || rel.includes('..')) return new Response('not found', { status: 404 });
+    return net.fetch(pathToFileURL(join(__dirname, 'hand', rel)).toString());
+  });
   loadEnv();
   try {
     // Every call is governed: a daily spending cap (kept across restarts), at most a few calls in
@@ -303,8 +323,17 @@ app.whenReady().then(async () => {
   createPodium();
   createTray();
 
-  ptt.on('ptt', (e) => {
+  // The talk key and the two-finger gesture both come here.
+  const onTalk = (
+    e: { type: 'start' } | { type: 'commit'; heldMs: number } | { type: 'cancel'; reason: 'other-key' | 'focus-lost' },
+  ) => {
     send('ptt', e);
+    // Pins dropped by the hand just before talking belong to this cue.
+    if (e.type === 'start' && cueSession && pinSessionTimer) {
+      clearTimeout(pinSessionTimer);
+      pinSessionTimer = null;
+      return;
+    }
     // Anchors are collected while the key is held; they travel with the cue's audio.
     if (e.type === 'start') {
       cueSession = new CueSession(
@@ -319,6 +348,66 @@ app.whenReady().then(async () => {
       if (e.type === 'commit') spokenCue = { id: s.id, heldMs: e.heldMs, anchors: s.end(true) };
       else void s.end(false).then(() => send('anchors', []));
     }
+  };
+  ptt.on('ptt', onTalk);
+
+  hand = new HandController({
+    preload: join(__dirname, 'preload.cjs'),
+    overlayHtml: join(__dirname, 'renderer', 'overlay.html'),
+    pin: async (p) => {
+      // A pinch outside a cue starts one, kept for 30 s so the person can pin, then talk.
+      if (!cueSession) {
+        cueSession = new CueSession(
+          bridge,
+          () => podium,
+          (list) => send('anchors', list),
+        );
+        send('anchors', []);
+        pinSessionTimer = setTimeout(() => {
+          const s = cueSession;
+          cueSession = null;
+          pinSessionTimer = null;
+          void s?.end(false).then(() => send('anchors', []));
+        }, 30000);
+      }
+      return cueSession.pinAt(p);
+    },
+    stopAll: () => conductor.stopAll(),
+    talk: (edge, heldMs) => onTalk(edge === 'start' ? { type: 'start' } : { type: 'commit', heldMs }),
+    notice: (text) => send('podium:notice', text),
+    status: (s) => send('hand', s),
+  });
+  ipcMain.on('hand:frame', (_e, f: HandFrame) => hand.frame(f));
+  ipcMain.handle('hand:camera', (_e, on: unknown) => hand.setCamera(on === true));
+  ipcMain.handle('hand:calibrate', () => hand.startCalibration());
+  ipcMain.handle('hand:accuracy', () => hand.startAccuracy());
+  ipcMain.handle('hand:gestures', async () => {
+    // The "select a lane" tries need a lane window to point at.
+    const { workArea } = screen.getPrimaryDisplay();
+    const laneOpen = bridge.connected
+      ? await bridge
+          .request(
+            {
+              op: 'openLane',
+              laneId: 'hand-test',
+              url: 'https://example.com/',
+              color: '#3f9a6b',
+              title: 'Point here and pinch',
+              bounds: {
+                left: workArea.x + Math.round(workArea.width / 2),
+                top: workArea.y + 160,
+                width: Math.round(workArea.width / 2) - 40,
+                height: workArea.height - 220,
+              },
+            },
+            30000,
+          )
+          .then(
+            () => true,
+            () => false,
+          )
+      : false;
+    hand.startGestureTest(laneOpen);
   });
   try {
     ptt.start();
@@ -386,7 +475,17 @@ function handleArgs(argv: string[]) {
   if (tidyCheck)
     void whenPaired(async () => {
       for (const url of tidyCheck.split(',')) {
-        await bridge.request({ op: 'openLane', laneId: 'tidy', url, color: '#7c8a9e', title: 'Tidy check', bounds: conductor.laneBounds() }, 30000);
+        await bridge.request(
+          {
+            op: 'openLane',
+            laneId: 'tidy',
+            url,
+            color: '#7c8a9e',
+            title: 'Tidy check',
+            bounds: conductor.laneBounds(),
+          },
+          30000,
+        );
         const t0 = Date.now();
         const l = LookResult.parse(await bridge.request({ op: 'look', laneId: 'tidy', screenshot: false }, 45000));
         const again = LookResult.parse(await bridge.request({ op: 'look', laneId: 'tidy', screenshot: false }, 45000));

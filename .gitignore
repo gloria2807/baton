@@ -10,3 +10,4 @@ bench/runs/
 video/out/
 *.tsbuildinfo
 apps/live/public/
+apps/desktop/assets/hand_landmarker.task

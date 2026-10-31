@@ -210,19 +210,24 @@ async function rest() {
   if (!cue || !pos) return;
   if (restAt && Math.hypot(pos.x - restAt.x, pos.y - restAt.y) < MOVE_PX) return;
   restAt = { ...pos };
-  const found = targetAt(pos.x, pos.y);
-  if (!found) return;
+  await reportAt(cue.id, { ...pos });
+}
+
+// Pin whatever is at this point of the page (client pixels) for the cue; returns the pin's number.
+async function reportAt(cueId: string, point: { x: number; y: number }): Promise<number | null> {
+  const found = targetAt(point.x, point.y);
+  if (!found) return null;
   let key = keys.get(found.el);
   if (!key) keys.set(found.el, (key = `${location.href}#${nextKey++}`));
   const r = found.el.getBoundingClientRect();
   const rect = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
   const report: RestReport = {
     kind: 'rest',
-    cueId: cue.id,
+    cueId,
     key,
     url: location.href,
     title: document.title,
-    point: { ...pos },
+    point,
     rect,
     dpr: window.devicePixelRatio,
     viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -231,9 +236,20 @@ async function rest() {
   try {
     const reply = (await chrome.runtime.sendMessage(report)) as { n?: number; isNew?: boolean } | undefined;
     if (reply?.n && reply.isNew) drawPin(reply.n, report.point, rect);
+    return reply?.n ?? null;
   } catch {
-    /* the extension reloaded; nothing to pin */
+    return null; // the extension reloaded; nothing to pin
   }
+}
+
+// The conductor's hand pinched at a point on the screen (Windows DIPs, the same units as
+// window.screenX): pin what is under it, if the point is inside this page.
+export async function pinAtScreen(cueId: string, sx: number, sy: number): Promise<number | null> {
+  const side = (window.outerWidth - window.innerWidth) / 2;
+  const x = sx - window.screenX - side;
+  const y = sy - window.screenY - (window.outerHeight - window.innerHeight - side);
+  if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return null;
+  return reportAt(cueId, { x: Math.round(x), y: Math.round(y) });
 }
 
 export function onCue(msg: { active: boolean; cueId?: string; keep?: boolean }) {

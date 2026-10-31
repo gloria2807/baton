@@ -25,7 +25,8 @@ export type ToContent =
   | { kind: 'cue'; active: boolean; cueId?: string; keep?: boolean }
   | { kind: 'record'; active: boolean }
   | { kind: 'fillCells'; mark: number; rows: string[][] }
-  | { kind: 'cursorVisible'; visible: boolean };
+  | { kind: 'cursorVisible'; visible: boolean }
+  | { kind: 'pinAt'; cueId: string; x: number; y: number };
 
 export type ToWorker =
   { kind: 'whoami' } | { kind: 'recording?' } | RestReport | { kind: 'recorded'; step: Record<string, unknown> };

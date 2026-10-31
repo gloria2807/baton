@@ -104,6 +104,8 @@ export const Command = z.discriminatedUnion('op', [
   // Development: pick up a rebuilt extension without a trip to chrome://extensions.
   z.object({ op: z.literal('reloadExtension') }),
   z.object({ op: z.literal('setThinking'), laneId: LaneId, text: z.string().max(140) }),
+  // The conductor's hand pinched at a screen point (DIPs) during a cue: pin what Chrome shows there.
+  z.object({ op: z.literal('pinAtScreen'), cueId: z.string().max(64), x: z.number(), y: z.number() }),
   // Bring a lane's window to the front, for something only the person can do there.
   z.object({ op: z.literal('focusLane'), laneId: LaneId }),
   // Google Sheets and Docs draw on a canvas: move with the Name Box and the keyboard, read through the file's own export.

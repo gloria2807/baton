@@ -15,6 +15,22 @@ const api = {
   stopAll: () => ipcRenderer.invoke('lanes:stopAll'),
   saveProfile: (p: unknown) => ipcRenderer.invoke('profile:save', p),
   getBudget: () => ipcRenderer.invoke('budget:get'),
+  // The conductor's hand: one small message per camera frame (a pose and a fingertip), never images.
+  handFrame: (f: {
+    pose: string;
+    tip: { x: number; y: number } | null;
+    wrist: { x: number; y: number } | null;
+    t: number;
+    fps: number;
+    delegate: string;
+    cameraFps: number;
+  }) => ipcRenderer.send('hand:frame', f),
+  setCamera: (on: boolean) => ipcRenderer.invoke('hand:camera', on),
+  calibrateHand: () => ipcRenderer.invoke('hand:calibrate'),
+  checkHandAccuracy: () => ipcRenderer.invoke('hand:accuracy'),
+  testGestures: () => ipcRenderer.invoke('hand:gestures'),
+  onHand: on('hand'),
+  onOverlay: on('overlay'),
   listNotes: () => ipcRenderer.invoke('notes:list'),
   removeNote: (id: number) => ipcRenderer.invoke('notes:remove', id),
   onAnchors: on('anchors'),

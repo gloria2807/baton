@@ -81,7 +81,11 @@ export function tidyFrame(): TidyReport {
     ),
   ].filter((el) => shown(el) && CONSENT.test(textOf(el).slice(0, 2000)));
   // A consent provider's own frame (Sourcepoint, OneTrust, TrustArc…) is the dialog itself.
-  const cmpFrame = window !== window.top && /consent|sourcepoint|privacy-mgmt|cmp|cookielaw|onetrust|trustarc|usercentrics|didomi|quantcast|cookiebot|privacy-center/i.test(location.href);
+  const cmpFrame =
+    window !== window.top &&
+    /consent|sourcepoint|privacy-mgmt|cmp|cookielaw|onetrust|trustarc|usercentrics|didomi|quantcast|cookiebot|privacy-center/i.test(
+      location.href,
+    );
   if (cmpFrame && document.body && shown(document.body)) candidates.push(document.body);
   // The innermost dialog that holds the buttons.
   const dialog = candidates.find(
@@ -117,13 +121,21 @@ export function tidyFrame(): TidyReport {
     /^(close|dismiss|no,? thanks?|not now|maybe later|skip|×|✕|✖|x|close (dialog|modal|popup|window)|continue (to site|browsing|shopping)|stay on|remind me later)$/i;
   // Only things that are plainly dialogs count: a dialog role, or a modal / pop-up / overlay name,
   // with words in them. Full-screen app shells (Gmail, Docs, Maps) and empty layers are left alone.
-  const DIALOG_NAME = /modal|popup|pop-up|overlay|newsletter|signup|sign-up|subscribe|lightbox|interstitial|promo|offer|welcome-mat|exit-intent/i;
-  const covering = [...document.querySelectorAll<HTMLElement>('[role=dialog], [aria-modal=true], dialog[open], body div, body section, body aside')]
+  const DIALOG_NAME =
+    /modal|popup|pop-up|overlay|newsletter|signup|sign-up|subscribe|lightbox|interstitial|promo|offer|welcome-mat|exit-intent/i;
+  const covering = [
+    ...document.querySelectorAll<HTMLElement>(
+      '[role=dialog], [aria-modal=true], dialog[open], body div, body section, body aside',
+    ),
+  ]
     .filter((el) => {
-      const isDialog = el.matches('[role=dialog], [aria-modal=true], dialog[open]') || DIALOG_NAME.test(`${el.id} ${el.className.toString()}`);
+      const isDialog =
+        el.matches('[role=dialog], [aria-modal=true], dialog[open]') ||
+        DIALOG_NAME.test(`${el.id} ${el.className.toString()}`);
       if (!isDialog || !shown(el)) return false;
       const s = getComputedStyle(el);
-      if (s.pointerEvents === 'none' || (s.position !== 'fixed' && s.position !== 'absolute' && !el.matches('dialog'))) return false;
+      if (s.pointerEvents === 'none' || (s.position !== 'fixed' && s.position !== 'absolute' && !el.matches('dialog')))
+        return false;
       if (textOf(el).length < 15 || el.querySelector('main, article, nav, [role=main]')) return false;
       const r = el.getBoundingClientRect();
       const area = (Math.min(r.right, vw) - Math.max(r.left, 0)) * (Math.min(r.bottom, vh) - Math.max(r.top, 0));
@@ -160,7 +172,9 @@ export function settleFrame(quietMs: number, capMs: number): Promise<number> {
     const t0 = performance.now();
     // Activity before this call counts too: a page that went quiet a while ago is settled already.
     // Ad images and tracking beacons never stop on some pages; only what builds the page counts.
-    const counts = (e: PerformanceEntry) => e.entryType !== 'resource' || !['img', 'beacon', 'other', 'ping'].includes((e as PerformanceResourceTiming).initiatorType);
+    const counts = (e: PerformanceEntry) =>
+      e.entryType !== 'resource' ||
+      !['img', 'beacon', 'other', 'ping'].includes((e as PerformanceResourceTiming).initiatorType);
     const before = [
       ...performance
         .getEntriesByType('resource')

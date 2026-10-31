@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { cueWav, rms } from '@baton/core/audio';
 import { CardView, Lanes, type Card, type LaneView } from './Cards';
 import { ProfileForm } from './Profile';
+import { CameraPanel, CameraSwitch } from './Camera';
 import { Recorder } from './recorder';
 import { hush, speak } from './speech';
 import { sounds } from './sounds';
@@ -83,6 +84,7 @@ function Budget() {
 
 export function Podium() {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
+  const [camera, setCamera] = useState(false);
   const [extension, setExtension] = useState<'connected' | 'waiting'>('waiting');
   const [token, setToken] = useState('');
   const [hasModel, setHasModel] = useState(true);
@@ -282,11 +284,13 @@ export function Podium() {
           )}
           {phase.kind === 'notice' && <div className={`main notice ${phase.tone}`}>{phase.text}</div>}
         </div>
+        <CameraSwitch on={camera} onToggle={() => setCamera((c) => !c)} />
         <button className={`chip ${extension}`} onClick={() => setPanel((p) => !p)} title="Chrome extension pairing">
           <i />
           {extension === 'connected' ? 'Chrome' : 'Pair Chrome'}
         </button>
       </div>
+      {camera && <CameraPanel onOff={() => setCamera(false)} />}
       {anchors.length > 0 && (
         <div className="anchors">
           {anchors.map((a) => (

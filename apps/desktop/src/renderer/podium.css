@@ -615,3 +615,62 @@ select option {
   font-style: normal;
   color: var(--brass);
 }
+
+/* Camera mode: the switch, the preview and the checks */
+.bar {
+  grid-template-columns: 28px 1fr auto auto;
+}
+.chip.camera i {
+  background: var(--paper-2);
+}
+.chip.camera.on {
+  color: var(--paper);
+}
+.chip.camera.on i {
+  background: var(--alert);
+}
+.camera-panel {
+  display: grid;
+  grid-template-columns: 176px 1fr;
+  gap: 14px;
+  padding: 12px 16px;
+}
+.camera-panel canvas {
+  width: 176px;
+  height: 132px;
+  border-radius: 8px;
+  background: var(--ink-2);
+}
+.camera-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.camera-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.camera-line .pose {
+  font-weight: 600;
+  color: var(--brass);
+}
+.camera-line .fps {
+  color: var(--paper-2);
+  font-variant-numeric: tabular-nums;
+}
+.camera-msg {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.camera-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+.camera-note {
+  font-size: 11.5px;
+  color: var(--paper-2);
+}

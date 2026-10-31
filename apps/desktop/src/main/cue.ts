@@ -78,6 +78,24 @@ export class CueSession {
     }
   }
 
+  // The conductor's hand pinched at a screen point: pin what Chrome shows there (the anchor arrives
+  // as an extension event), or, outside Chrome, a crop of the screen around it.
+  async pinAt(p: { x: number; y: number }): Promise<{ n: number | null; laneId?: string }> {
+    if (this.ended) return { n: null };
+    const inChrome = this.bridge.connected
+      ? await this.bridge
+          .request<{ n: number | null; laneId?: string }>({ op: 'pinAtScreen', cueId: this.id, x: p.x, y: p.y }, 5000)
+          .catch(() => ({ n: null }))
+      : { n: null };
+    if (inChrome.n) return inChrome;
+    const shot = await this.desktopShot(p);
+    if (!shot || this.ended) return { n: null };
+    const n = Math.max(0, ...this.anchors.map((a) => a.n)) + 1;
+    this.anchors.push({ n, at: Date.now() - this.startedAt, source: 'desktop', point: p, screenshot: shot });
+    this.publish();
+    return { n };
+  }
+
   // A crop of the screen centred on the pointer (read-only questions about things outside Chrome).
   private async desktopShot(p: { x: number; y: number }): Promise<string | undefined> {
     try {

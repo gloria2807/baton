@@ -17,7 +17,7 @@ import {
 } from 'electron';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LookResult, RecordedStep, TALK_KEYS, isTalkKeyId, type Anchor, type TalkKeyId } from '@baton/core';
+import { LookResult, RecordedStep, TALK_KEYS, isTalkKeyId, tile, type Anchor, type TalkKeyId } from '@baton/core';
 import { Governor, Model, type SpendState } from '@baton/model';
 // @ts-expect-error: a plain .mjs module shared with the extension build
 import { iconPng } from '../../../../scripts/icon.mjs';
@@ -537,6 +537,36 @@ function handleArgs(argv: string[]) {
       'VOICE_REPLAY',
     );
 
+  // --doc-probe=<doc url>: type a line into a Google Doc in a lane window and read it back. No model calls.
+  const docProbe = arg('doc-probe');
+  if (docProbe)
+    void whenPaired(async () => {
+      await bridge.request({ op: 'closeLane', laneId: 'docprobe' }).catch(() => undefined);
+      // --small: a quarter-screen tile, as lanes have in a Score of four.
+      const { workArea } = screen.getPrimaryDisplay();
+      const bounds = argv.includes('--small') ? tile(4, workArea, 110)[3] : conductor.laneBounds();
+      await bridge.request(
+        { op: 'openLane', laneId: 'docprobe', url: docProbe, color: '#7c8a9e', title: 'Doc probe', bounds },
+        30000,
+      );
+      const before = String(
+        await bridge.request({ op: 'docRead', laneId: 'docprobe' }, 30000).catch((e) => `ERR ${(e as Error).message}`),
+      );
+      const wrote = await bridge
+        .request({ op: 'docWrite', laneId: 'docprobe', text: `Baton probe ${Date.now().toString(36)}` }, 60000)
+        .then(
+          () => 'ok',
+          (e) => `ERR ${(e as Error).message}`,
+        );
+      await new Promise((r) => setTimeout(r, 3000));
+      const after = String(
+        await bridge.request({ op: 'docRead', laneId: 'docprobe' }, 30000).catch((e) => `ERR ${(e as Error).message}`),
+      );
+      log(
+        `DOC_PROBE before ${before.length} chars ${JSON.stringify(before.slice(0, 80))}; write ${wrote}; after ${after.length} chars ${JSON.stringify(after.slice(-80))}`,
+      );
+    }, 'DOC_PROBE');
+
   // --tidy-check=<url>,<url>: open each page in a lane window and report what Baton cleared out of
   // the way (consent banners, pop-ups) or found (bot checks). No model calls.
   const tidyCheck = arg('tidy-check');
@@ -673,6 +703,7 @@ function handleArgs(argv: string[]) {
               only: real.includes('=') ? real.split('=')[1]!.split(',') : undefined,
               repeat: Number(arg('repeat') ?? 1),
               label: arg('label'),
+              conductorOnly: argv.includes('--conductor-only'),
             })
           : Promise.reject(new Error('no Baseten key')),
       'BENCH_REAL',

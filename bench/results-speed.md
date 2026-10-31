@@ -87,3 +87,59 @@ Wall time per request. Planning is reported apart; the conductor time excludes i
 | weather-three-cities | 3 | pass 114 s, 14 steps | **fail** 118 s, 19 steps | 2.60 | 1.0× |
 | three-museums | 3 | pass 58 s, 10 steps | pass 24 s, 13 steps | 2.10 | 2.4× |
 
+## lisbon channel: real-multi-2026-10-31T09-10-16-285Z
+
+Average seconds per lane step, from every lane receipt in the run. "decide" includes the governor wait and the model call; "look" is the look after the action and includes settle, tidy, collect and screenshot.
+
+| Mode | Steps | decide | wait | model | action | look | settle | tidy | collect | screenshot | verify | total | settle after navigating (steps) | settle otherwise | Steps with a screenshot sent |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| one lane, all parts | 0 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | - (0) | - | 0% |
+| conductor | 94 | 2.66 | 0.00 | 2.66 | 2.22 | 0.69 | 0.43 | 0.07 | 0.04 | 0.14 | 0.00 | 6.19 | 0.62 (63) | 0.19 | 28% |
+
+Wall time per request. Planning is reported apart; the conductor time excludes it, and one lane runs the same planned parts.
+
+| Request | Lanes | One lane, all parts | Conductor | Planning (s) | Speed-up |
+|---|---|---|---|---|---|
+
+## lisbon channel 2: real-multi-2026-10-31T09-20-57-784Z
+
+Average seconds per lane step, from every lane receipt in the run. "decide" includes the governor wait and the model call; "look" is the look after the action and includes settle, tidy, collect and screenshot.
+
+| Mode | Steps | decide | wait | model | action | look | settle | tidy | collect | screenshot | verify | total | settle after navigating (steps) | settle otherwise | Steps with a screenshot sent |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| one lane, all parts | 0 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | - (0) | - | 0% |
+| conductor | 98 | 2.55 | 0.00 | 2.55 | 1.67 | 0.71 | 0.46 | 0.13 | 0.04 | 0.08 | 0.00 | 5.94 | 0.97 (46) | 0.00 | 31% |
+
+Wall time per request. Planning is reported apart; the conductor time excludes it, and one lane runs the same planned parts.
+
+| Request | Lanes | One lane, all parts | Conductor | Planning (s) | Speed-up |
+|---|---|---|---|---|---|
+
+## lisbon channel 3: real-multi-2026-10-31T09-30-38-491Z
+
+Average seconds per lane step, from every lane receipt in the run. "decide" includes the governor wait and the model call; "look" is the look after the action and includes settle, tidy, collect and screenshot.
+
+| Mode | Steps | decide | wait | model | action | look | settle | tidy | collect | screenshot | verify | total | settle after navigating (steps) | settle otherwise | Steps with a screenshot sent |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| one lane, all parts | 0 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | - (0) | - | 0% |
+| conductor | 138 | 2.67 | 0.00 | 2.67 | 1.98 | 1.08 | 0.72 | 0.06 | 0.08 | 0.22 | 0.04 | 6.56 | 1.83 (49) | 0.22 | 28% |
+
+Wall time per request. Planning is reported apart; the conductor time excludes it, and one lane runs the same planned parts.
+
+| Request | Lanes | One lane, all parts | Conductor | Planning (s) | Speed-up |
+|---|---|---|---|---|---|
+
+## lisbon channel 4: real-multi-2026-10-31T12-44-42-122Z
+
+Average seconds per lane step, from every lane receipt in the run. "decide" includes the governor wait and the model call; "look" is the look after the action and includes settle, tidy, collect and screenshot.
+
+| Mode | Steps | decide | wait | model | action | look | settle | tidy | collect | screenshot | verify | total | settle after navigating (steps) | settle otherwise | Steps with a screenshot sent |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| one lane, all parts | 0 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | - (0) | - | 0% |
+| conductor | 127 | 2.69 | 0.00 | 2.69 | 1.33 | 0.70 | 0.54 | 0.08 | 0.03 | 0.06 | 0.05 | 5.19 | 1.16 (45) | 0.71 | 28% |
+
+Wall time per request. Planning is reported apart; the conductor time excludes it, and one lane runs the same planned parts.
+
+| Request | Lanes | One lane, all parts | Conductor | Planning (s) | Speed-up |
+|---|---|---|---|---|---|
+

@@ -33,6 +33,8 @@ interface ScoreRecord {
   seconds: number;
   manualMinutes: number;
   lanes: LaneRecord[];
+  // What the lanes told each other; a post with `adjusts` is a lane changing its own work.
+  channel?: Array<{ id: number; laneName: string; color?: string; at: number; text: string; adjusts?: number }>;
 }
 
 interface Listed {
@@ -145,6 +147,31 @@ export function ScoreView() {
             <span className="note-key" /> step <span className="note-key yes" /> approved by you{' '}
             <span className="note-key miss" /> check failed, tried again <span className="bar-key" /> finished
           </p>
+
+          {rec.channel && rec.channel.length > 0 && (
+            <section className="channel">
+              <h2>What the lanes told each other</h2>
+              <ol>
+                {rec.channel.map((p) => (
+                  <li key={p.id} id={`post-${p.id}`} style={{ ['--c' as string]: p.color ?? '#7c8a9e' }}>
+                    <span className="when">{new Date(p.at).toTimeString().slice(0, 8)}</span>
+                    <span className="who">
+                      <i /> {p.laneName} → all
+                    </span>
+                    <span className="what">
+                      {p.text}
+                      {p.adjusts && (
+                        <a className="re" href={`#post-${p.adjusts}`}>
+                          {' '}
+                          ↳ changed its plan because of #{p.adjusts}
+                        </a>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
           {rec.lanes.map((l) => (
             <section className="lane-strip" key={l.id} style={{ ['--c' as string]: l.color }}>

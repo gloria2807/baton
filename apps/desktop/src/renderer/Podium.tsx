@@ -97,6 +97,9 @@ export function Podium() {
   const [lanes, setLanes] = useState<LaneView[]>([]);
   const [caption, setCaption] = useState('');
   const [thinking, setThinking] = useState('');
+  const [posts, setPosts] = useState<
+    Array<{ id: number; laneName: string; color?: string; text: string; adjusts?: number }>
+  >([]);
   const captions = useRef(new Captions());
   const [cards, setCards] = useState<Card[]>([]);
   const [anchors, setAnchors] = useState<Array<{ n: number; label: string; source: string }>>([]);
@@ -132,6 +135,7 @@ export function Podium() {
       }),
       window.baton.onNotice((t) => setPhase({ kind: 'notice', text: String(t), tone: toneOf(String(t)) })),
       window.baton.onThinking((t) => setThinking(String(t))),
+      window.baton.onChannel((p) => setPosts(p as typeof posts)),
       window.baton.onSound((s) => (s === 'plan' ? sounds.plan() : undefined)),
       window.baton.onLanes((l) => {
         const next = l as LaneView[];
@@ -353,6 +357,19 @@ export function Podium() {
         </div>
       )}
       <Lanes lanes={lanes} />
+      {lanes.length > 0 && posts.length > 0 && (
+        <div className="thread" aria-label="What the lanes told each other">
+          {posts.map((p) => (
+            <div key={p.id} className="post" style={{ ['--c' as string]: p.color ?? '#7c8a9e' }}>
+              <span className="who">{p.laneName} →</span>
+              <span className="what">
+                {p.adjusts ? '↳ ' : ''}
+                {p.text}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {cards.map((c) => (
         <CardView key={c.id} card={c} />
       ))}

@@ -23,7 +23,7 @@ export interface RunOptions {
 export function partGoal(goal: string): string {
   return `${goal}
 
-This is one part of a larger plan; other lanes are doing the other parts at the same time. Get exactly what this part asks for from the most direct page, then finish at once. Do not look for extra detail.`;
+This is one part of a larger plan; other lanes are doing the other parts at the same time. Get exactly what this part asks for from the most direct page. Before you finish, use post_finding once to tell the other lanes the one fact they most need from your part (for example rain on Saturday afternoon, a place closed on Sunday, a time or a price), and change your own work if another lane's post affects it. Then finish at once. Do not look for extra detail.`;
 }
 
 // A dependent part's goal carries what its dependencies found.
@@ -33,7 +33,7 @@ export function goalWithInputs(part: Part, inputs: Record<string, PartResult>, s
       const r = inputs[d];
       const name = score.parts.find((p) => p.id === d)?.name ?? d;
       return r
-        ? `- ${name}: ${r.result}${r.data === undefined ? '' : ` (${JSON.stringify(r.data).slice(0, 600)})`}`
+        ? `- ${name}${r.status === 'done' ? '' : ` (${r.status}, partial)`}: ${r.result}${r.data === undefined ? '' : ` (${JSON.stringify(r.data).slice(0, 600)})`}`
         : '';
     })
     .filter(Boolean);
@@ -56,12 +56,15 @@ export async function runScore(score: Score, opts: RunOptions): Promise<Record<s
     };
 
     const pump = () => {
-      // Skip parts whose dependencies did not succeed.
+      // Skip a part only when every part it depends on finished without success. A write-up that
+      // depends on four parts still runs when one of them failed, with what the others found
+      // (measured: one wandering lane left the person's Doc empty).
       let skipped = true;
       while (skipped) {
         skipped = false;
         for (const p of pending.values()) {
-          const bad = p.dependsOn.find((d) => results[d] && results[d]!.status !== 'done');
+          const settled = p.dependsOn.length && p.dependsOn.every((d) => results[d]);
+          const bad = settled && p.dependsOn.every((d) => results[d]!.status !== 'done') ? p.dependsOn[0] : undefined;
           if (bad) {
             pending.delete(p.id);
             settle(p.id, {
@@ -74,7 +77,7 @@ export async function runScore(score: Score, opts: RunOptions): Promise<Record<s
       }
       for (const p of [...pending.values()]) {
         if (running.size >= limit) break;
-        if (!p.dependsOn.every((d) => results[d]?.status === 'done')) continue;
+        if (!p.dependsOn.every((d) => results[d])) continue;
         pending.delete(p.id);
         running.add(p.id);
         opts.onUpdate?.({ id: p.id, state: 'running' });

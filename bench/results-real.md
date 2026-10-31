@@ -113,3 +113,51 @@ Model: meta-models/muse-spark-open-1026 on Baseten, in the person's own signed-i
 
 Totals: 85 steps, 475 s, $0.98.
 
+## Multi-part requests on real websites (real-multi-2026-10-31T09-10-16-285Z)
+
+Model: meta-models/muse-spark-open-1026 on Baseten, in the person's own signed-in Chrome. 0 of 3 runs passed. Banners and pop-ups cleared: 3; lanes stopped by one: 1.
+
+| Task | Site | Mode | Run | Result | Steps | Time (s) | Cost (USD) | Needed the person | Cleared | Check |
+|---|---|---|---|---|---|---|---|---|---|---|
+| lisbon-weekend | weather, food, museum → Docs | conductor | 1 | **fail** | 20 | 135 | 0.199 | asked: This site wants to check you're human. Please do the check in this lane's window, then answer “done”. | 2 | check failed: the file could not be read |
+| lisbon-weekend | weather, food, museum → Docs | conductor | 2 | **fail** | 54 | 253 | 0.553 | asked: I have taken 40 steps without finishing. Should I keep going? | 1 | check failed: the file could not be read |
+| lisbon-weekend | weather, food, museum → Docs | conductor | 3 | **fail** | 20 | 68 | 0.218 | asked: I tried 3 times and it did not work ([   {     "origin": "string",     "code": "too_big",     "maximum": 120,     "inclu | 0 | check failed: the file could not be read |
+
+Totals: 94 steps, 457 s, $0.97.
+
+## Multi-part requests on real websites (real-multi-2026-10-31T09-20-57-784Z)
+
+Model: meta-models/muse-spark-open-1026 on Baseten, in the person's own signed-in Chrome. 0 of 3 runs passed. Banners and pop-ups cleared: 0; lanes stopped by one: 0.
+
+| Task | Site | Mode | Run | Result | Steps | Time (s) | Cost (USD) | Needed the person | Cleared | Check |
+|---|---|---|---|---|---|---|---|---|---|---|
+| lisbon-weekend | weather, food, museum → Docs | conductor | 1 | **fail** | 71 | 272 | 0.785 | asked: I have taken 40 steps without finishing. Should I keep going? | 0 | the write-up is not in the doc |
+| lisbon-weekend | weather, food, museum → Docs | conductor | 2 | **fail** | 22 | 96 | 0.276 | asked: I tried 3 times and it did not work (mark 8 is not on the page any more; look again). What should I do? | 0 | the write-up is not in the doc |
+| lisbon-weekend | weather, food, museum → Docs | conductor | 3 | **fail** | 8 | 25 | 0.046 | asked: I could not decide what to do next (Baton's daily model budget ($10.00) is used up ($10.02 spent today). Raise BATON_DAI; asked: I could not decide what to do next (Baton's daily model budget ($10.00) is used up ($10.03 spent today). Raise BATON_DAI; asked: I could not decide what to do next (Baton's daily model budget ($10.00) is used up ($10.03 spent today). Raise BATON_DAI | 0 | check failed: Failed to fetch |
+
+Totals: 101 steps, 392 s, $1.11.
+
+## Multi-part requests on real websites (real-multi-2026-10-31T09-30-38-491Z)
+
+Model: meta-models/muse-spark-open-1026 on Baseten, in the person's own signed-in Chrome. 0 of 3 runs passed. Banners and pop-ups cleared: 0; lanes stopped by one: 0.
+
+| Task | Site | Mode | Run | Result | Steps | Time (s) | Cost (USD) | Needed the person | Cleared | Check |
+|---|---|---|---|---|---|---|---|---|---|---|
+| lisbon-weekend | weather, food, museum → Docs | conductor | 1 | **fail** | 80 | 263 | 0.951 | asked: I tried 3 times and it did not work (nothing on the page changed). What should I do?; asked: I tried 3 times and it did not work (23 value(s) not found when read back, e.g. “Lisbon weekend BB7AQL7”). What should I | 0 | the write-up is not in the doc |
+| lisbon-weekend | weather, food, museum → Docs | conductor | 2 | **fail** | 60 | 197 | 0.737 | asked: I could not decide what to do next (model output invalid after retry: ✖ Invalid input: expected object, received undefin; asked: I could not decide what to do next (model output invalid after retry: no JSON object in the answer). How should I contin; asked: I tried 3 times and it did not work (14 value(s) not found when read back, e.g. “Lisbon weekend BB7AQL7”). What should I | 0 | the write-up is not in the doc |
+| lisbon-weekend | weather, food, museum → Docs | conductor | 3 | **fail** | 0 | 0 | 0.000 | nothing | 0 | check failed: Chrome extension is not connected |
+
+Totals: 140 steps, 460 s, $1.69.
+
+## Multi-part requests on real websites (real-multi-2026-10-31T12-44-42-122Z)
+
+Model: meta-models/muse-spark-open-1026 on Baseten, in the person's own signed-in Chrome. 0 of 3 runs passed. Banners and pop-ups cleared: 0; lanes stopped by one: 0.
+
+| Task | Site | Mode | Run | Result | Steps | Time (s) | Cost (USD) | Needed the person | Cleared | Check |
+|---|---|---|---|---|---|---|---|---|---|---|
+| lisbon-weekend | weather, food, museum → Docs | conductor | 1 | **fail** | 44 | 170 | 0.475 | asked: I tried 3 times and it did not work (nothing on the page changed). What should I do?; asked: I tried 3 times and it did not work (there is no search box on this page; navigate or use click and type instead). What  | 0 | correct |
+| lisbon-weekend | weather, food, museum → Docs | conductor | 2 | **fail** | 54 | 223 | 0.765 | asked: I tried 3 times and it did not work (nothing on the page changed). What should I do? | 0 | correct |
+| lisbon-weekend | weather, food, museum → Docs | conductor | 3 | **fail** | 29 | 76 | 0.369 | asked: I tried 3 times and it did not work (nothing on the page changed). What should I do? | 0 | correct |
+
+Totals: 127 steps, 469 s, $1.61.
+

@@ -138,7 +138,10 @@ export const LookResult = z.object({
   // Something only the person can get past, such as a "check you're human" page. Never solved by Baton.
   blocker: z.object({ kind: z.literal('captcha'), text: z.string().max(300) }).optional(),
   // A consent dialog whose most private choice Baton could not tell: its buttons, for the lane to pick from.
-  consent: z.array(z.string().max(120)).max(12).optional(),
+  consent: z
+    .array(z.string().transform((s) => s.slice(0, 120)))
+    .transform((a) => a.slice(0, 12))
+    .optional(),
   // Editors that draw on a canvas, whose contents are not in the element list.
   app: z.enum(['sheets', 'docs']).optional(),
   // Where the look's time went, in milliseconds (speed measurement).

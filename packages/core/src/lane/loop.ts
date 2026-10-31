@@ -17,6 +17,7 @@ import type { Action, StepDecision } from './actions.js';
 import { decideMessages, listMessages, readMessages, type HistoryItem, type LaneMessage } from './prompt.js';
 import { checkWritten, verify, type Verdict } from './verify.js';
 import { untrusted } from '../safety/injection.js';
+import type { Finding, Post, PostResult } from '../score/channel.js';
 
 export const MAX_STEPS = 40;
 export const MAX_FAILED_VERIFICATIONS = 3;
@@ -107,6 +108,8 @@ export interface Supervisor {
   inbox?(): string[];
   // Keep a lane's tip about a site in Baton's site notes.
   addSiteNote?(host: string, note: string): void;
+  // The Score's shared channel, for a lane that runs alongside others (docs/FOCUS.md section 2).
+  channel?: { post(f: Finding): PostResult; recent(): Post[] };
 }
 
 export type GateRecord = 'allowed' | 'approved' | 'pre-approved' | 'declined' | 'blocked';
@@ -131,7 +134,7 @@ export interface StepRecord {
 export interface ReceiptSink {
   step(record: StepRecord, screenshotJpeg?: string): void | Promise<void>;
   event(
-    kind: 'injection' | 'question' | 'answer' | 'error' | 'tidy' | 'blocker' | 'site-note',
+    kind: 'injection' | 'question' | 'answer' | 'error' | 'tidy' | 'blocker' | 'site-note' | 'post',
     detail: unknown,
   ): void | Promise<void>;
 }
@@ -347,6 +350,7 @@ export async function runLane(
           warning: stepWarning,
           instructions,
           siteNotes: notesFor(spec.siteNotes, look.url),
+          posts: supervisor.channel?.recent(),
         }),
       );
       addUsage(reply.usage);
@@ -425,6 +429,17 @@ export async function runLane(
       verdict = { ok: true, note: `the person answered “${r.answer.slice(0, 80)}”` };
       await record();
       look = await hands.look(true);
+      continue;
+    }
+    if (action.tool === 'post_finding') {
+      const r = supervisor.channel
+        ? supervisor.channel.post({ text: action.text, facts: action.facts, adjusts: action.adjusts })
+        : ({ ok: false, reason: 'this lane runs alone; there are no other lanes to tell' } as const);
+      if (r.ok) await receipts.event('post', r.post);
+      verdict = r.ok
+        ? { ok: true, note: `posted #${r.post.id}${r.post.adjusts ? ` (answering #${r.post.adjusts})` : ''}` }
+        : { ok: false, note: r.reason };
+      await record();
       continue;
     }
     if (action.tool === 'note_site') {

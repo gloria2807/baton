@@ -30,6 +30,9 @@ import {
   PlanStream,
   goalWithProfile,
   partGoal,
+  memoryCommand,
+  memoryLines,
+  type MemoryCommand,
   Channel,
   postLine,
   manualMinutes,
@@ -55,6 +58,7 @@ import { toOpenAI } from '@baton/model';
 import { costUsd, cropElement, launchLane } from './lanes';
 import { outDir } from './paths';
 import { log } from './log';
+import { loadMemory } from './memory-store';
 
 // Lane colours from docs/DESIGN.md: distinct on camera, never neon.
 export const LANE_COLORS = ['#4d7bd8', '#3f9a6b', '#d98a3a', '#c8577a', '#2f9c9c', '#9b7a3d', '#7c8a9e', '#b85c3c'];
@@ -80,6 +84,8 @@ export type Card =
       image?: string;
     }
   | { kind: 'question'; id: number; laneId: string; laneName: string; color: string; question: string }
+  // Asked once after a correction: should Baton keep it as a preference? Saved only on yes.
+  | { kind: 'remember'; id: number; laneId: string; laneName: string; color: string; question: string; text: string }
   | {
       kind: 'injection';
       id: number;
@@ -201,6 +207,63 @@ export class Conductor {
   private laneCount = 0;
   private run: ScoreRunState | null = null;
   busy = false;
+  // What Baton remembers about the person (docs/FOCUS.md section 3).
+  readonly memory = loadMemory();
+  private lastRequest = '';
+
+  private memoryMove(cmd: MemoryCommand) {
+    if (cmd.kind === 'remember') {
+      const r = this.memory.remember(cmd.text);
+      const said = r.ok
+        ? `I'll remember that ${r.item.text.replace(/\bmy\b/gi, 'your').replace(/\bI\b/g, 'you')}.`
+        : `I won't remember that: ${r.reason}.`;
+      this.send('speak', said);
+      void this.show({
+        kind: 'result',
+        laneId: 'memory',
+        laneName: 'Memory',
+        color: '#c99a3b',
+        status: r.ok ? 'remembered' : 'not remembered',
+        result: said,
+        detail: '',
+      });
+    } else if (cmd.kind === 'forget') {
+      const gone = this.memory.forget(cmd.text);
+      const said = gone.length
+        ? `Forgotten: ${gone.map((m) => m.label).join(', ')}.`
+        : `I don't remember anything about ${cmd.text}.`;
+      this.send('speak', said);
+      void this.show({
+        kind: 'result',
+        laneId: 'memory',
+        laneName: 'Memory',
+        color: '#c99a3b',
+        status: 'forgotten',
+        result: said,
+        detail: '',
+      });
+    } else {
+      const items = this.memory.list().filter((m) => m.kind !== 'task');
+      const said = items.length
+        ? `I remember that ${items
+            .slice(0, 4)
+            .map((m) => m.text.replace(/\bmy\b/gi, 'your'))
+            .join('; ')}${items.length > 4 ? `, and ${items.length - 4} more` : ''}.`
+        : "I don't remember anything about you yet.";
+      this.send('speak', said);
+      void this.show({
+        kind: 'result',
+        laneId: 'memory',
+        laneName: 'Memory',
+        color: '#c99a3b',
+        status: 'answer',
+        result: said,
+        detail: items.map((m) => m.label).join(' · '),
+      });
+    }
+    this.send('memory', this.memory.list());
+    log(`memory ${cmd.kind}: ${this.memory.list().length} items`);
+  }
   // Voice timing (docs/NEXT.md section 3): marks from key release to the first lane at work.
   timing: ((mark: 'heard' | 'planned' | 'part' | 'lane-open' | 'answered', detail?: string) => void) | null = null;
 
@@ -279,6 +342,9 @@ export class Conductor {
     } else if (card.kind === 'injection') {
       if (!yesNo) return false;
       this.answer(card.id, { choice: yesNo === 'approved' ? 'continue' : 'stop' });
+    } else if (card.kind === 'remember') {
+      if (!yesNo) return false;
+      this.answer(card.id, { choice: yesNo === 'approved' ? 'approve' : 'decline' });
     } else if (card.kind === 'question') {
       if (pointed) return false;
       if (/^\s*(stop|cancel|never mind)\b/i.test(transcript)) this.answer(card.id, { choice: 'stop' });
@@ -697,6 +763,18 @@ export class Conductor {
 
   private async finishScore(run: ScoreRunState) {
     const m = await this.merged(run);
+    // A short record of the plan, so "do the same for Porto" can find it later.
+    const links = [
+      ...new Set(
+        run.score.parts.map((p) => p.startUrl).filter((u) => /docs\.google\.com\/(document|spreadsheets)/.test(u)),
+      ),
+    ];
+    this.memory.recordTask(
+      this.lastRequest || run.score.title,
+      `${m.headline}. Parts: ${run.score.parts.map((p) => `${p.name}: ${p.goal.replace(/\s+/g, ' ').slice(0, 160)}`).join(' | ')}`,
+      links,
+    );
+    this.send('memory', this.memory.list());
     if (!run.spoke) this.send('speak', m.speech);
     void this.show({ kind: 'score', ...this.scoreCardFields(run, m.headline), done: true });
     const record = {
@@ -958,7 +1036,28 @@ export class Conductor {
       return true;
     }
     st.inbox.push(said);
+    void this.offerToRemember(st.part.name, said);
     return true;
+  }
+
+  // A correction to a lane ("you, under 150") may be a lasting preference: ask once, keep it only on yes.
+  private async offerToRemember(partName: string, said: string) {
+    const words = said.replace(/^\s*(you|hey you|lane)\b[,:]?\s*/i, '').trim();
+    if (words.length < 3) return;
+    const text = `For ${partName.toLowerCase()}: ${words}`;
+    const a = await this.show({
+      kind: 'remember',
+      laneId: 'memory',
+      laneName: 'Memory',
+      color: '#c99a3b',
+      question: `Should I remember that for ${partName.toLowerCase()} you want “${words}”?`,
+      text,
+    });
+    if ('choice' in a && a.choice === 'approve') {
+      const r = this.memory.remember(text, 'preference');
+      this.send('podium:notice', r.ok ? `Remembered: ${text}` : `Not remembered: ${r.reason}`);
+      this.send('memory', this.memory.list());
+    }
   }
 
   // A cue that is not an answer to a card: interpret what was said and pointed at, then answer
@@ -991,7 +1090,13 @@ export class Conductor {
         ListenReply,
         cue.wav,
         LISTEN_SYSTEM,
-        listenText({ anchors: cue.anchors, profile: this.getProfile(), sites: SITES, heldMs: cue.heldMs }),
+        listenText({
+          anchors: cue.anchors,
+          profile: this.getProfile(),
+          sites: SITES,
+          heldMs: cue.heldMs,
+          memories: memoryLines(this.memory.relevant('trip travel plan same last')),
+        }),
         {
           // The model's reasoning, as one line that rewrites itself while the person waits.
           onReasoning: (all) => {
@@ -1057,6 +1162,10 @@ export class Conductor {
       this.stopAll();
       return;
     }
+    // "Remember that…", "forget…", "what do you remember about me?": handled here, not planned.
+    const mem = memoryCommand(cue.transcript);
+    if (mem) return this.memoryMove(mem);
+    this.lastRequest = cue.transcript;
     // Rehearsing: what the person says is narration, until they say they are done.
     const command = routineCommand(cue.transcript);
     if (this.rehearsal) {
@@ -1075,6 +1184,7 @@ export class Conductor {
     const atLane = cue.anchors.find((a) => a.laneId);
     if (atLane?.laneId && this.redirect(atLane.laneId, cue.transcript)) return;
     const references = mapDeixis(cue.transcript, cue.heldMs, cue.anchors);
+    const memories = this.memory.relevant(cue.transcript);
     this.send('podium:notice', 'Thinking…');
     const record: Record<string, unknown> = {
       id: cue.id,
@@ -1099,6 +1209,7 @@ export class Conductor {
                 references,
                 profile: this.getProfile(),
                 sites: SITES,
+                memories: memoryLines(memories),
               }),
             ),
             'low',
@@ -1107,6 +1218,15 @@ export class Conductor {
       record.move = move;
       record.ms = Date.now() - t0;
       record.pipeline = planned ? 'fast' : 'classic';
+      // Which memories the plan used, shown as chips so the person can see why it chose what it did.
+      const usedIds = 'used' in move && Array.isArray(move.used) ? move.used : [];
+      const used = this.memory
+        .list()
+        .filter((m) => usedIds.includes(m.id))
+        .map((m) => m.label);
+      record.memoriesUsed = used;
+      this.send('memory-used', used);
+      if (used.length) log(`plan used memories: ${used.join(', ')}`);
       if (!planned) this.timing?.('planned', move.kind);
       log(`cue ${cue.id} → ${move.kind} (${record.ms} ms, ${cue.anchors.length} anchors)`);
       await this.perform(move, cue.anchors);

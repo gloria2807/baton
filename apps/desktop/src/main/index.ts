@@ -329,6 +329,10 @@ app.whenReady().then(async () => {
   }));
   ipcMain.handle('profile:save', (_e, p: unknown) => (profile = saveProfile(p)));
   ipcMain.handle('notes:list', () => listNotes());
+  // Memory in the Podium settings: view, edit and delete every item.
+  ipcMain.handle('memory:list', () => conductor.memory.list());
+  ipcMain.handle('memory:remove', (_e, id: unknown) => (conductor.memory.remove(Number(id)), conductor.memory.list()));
+  ipcMain.handle('memory:edit', (_e, id: unknown, text: unknown) => conductor.memory.edit(Number(id), String(text)));
   ipcMain.handle('notes:remove', (_e, id: unknown) => removeNote(Number(id)));
   ipcMain.handle('budget:get', () =>
     model?.governor

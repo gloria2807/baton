@@ -33,6 +33,11 @@ const api = {
   // Voice that feels alive: the model's reasoning as one line, sounds, and live caption counts.
   onThinking: on('thinking'),
   onChannel: on('channel'),
+  listMemory: () => ipcRenderer.invoke('memory:list'),
+  removeMemory: (id: number) => ipcRenderer.invoke('memory:remove', id),
+  editMemory: (id: number, text: string) => ipcRenderer.invoke('memory:edit', id, text),
+  onMemory: on('memory'),
+  onMemoryUsed: on('memory-used'),
   onSound: on('sound'),
   captionStats: (updates: number) => ipcRenderer.send('caption:stats', updates),
   // Status lines for the event log (never audio, text from the screen, or secrets).

@@ -22,6 +22,7 @@ export type Card =
       image?: string;
     }
   | { kind: 'question'; id: number; laneId: string; laneName: string; color: string; question: string }
+  | { kind: 'remember'; id: number; laneId: string; laneName: string; color: string; question: string; text: string }
   | {
       kind: 'injection';
       id: number;
@@ -288,6 +289,22 @@ export function CardView({ card }: { card: Card }) {
             </button>
             <button className="btn" onClick={() => answer(card.id, { choice: 'approve' })}>
               Approve
+            </button>
+          </div>
+        </div>
+      );
+    case 'remember':
+      return (
+        <div className="card question">
+          <Head card={card} label="asks you" />
+          <div className="card-title">{card.question}</div>
+          <div className="card-actions">
+            <span className="hint">or say “yes” / “no”</span>
+            <button className="btn ghost" onClick={() => answer(card.id, { choice: 'decline' })}>
+              No
+            </button>
+            <button className="btn" onClick={() => answer(card.id, { choice: 'approve' })}>
+              Remember it
             </button>
           </div>
         </div>

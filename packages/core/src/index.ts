@@ -27,3 +27,4 @@ export * from './hand/calibration.js';
 export * from './hand/gestures.js';
 export * from './cue/listen.js';
 export * from './score/channel.js';
+export * from './memory/memory.js';

@@ -33,6 +33,75 @@ type PttEvent = { type: 'start' } | { type: 'commit'; heldMs: number } | { type:
 const BARS = 28;
 
 // Today's model spending against the daily cap, so the cost is never a surprise.
+type Memory = { id: number; kind: 'fact' | 'preference' | 'task'; text: string; label: string };
+
+// What Baton remembers: every item can be read, corrected or deleted here.
+function MemorySection() {
+  const [items, setItems] = useState<Memory[]>([]);
+  const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
+  useEffect(() => {
+    void window.baton.listMemory().then((m) => setItems(m as Memory[]));
+    const off = window.baton.onMemory((m) => setItems(m as Memory[]));
+    return () => void off();
+  }, []);
+  async function save() {
+    if (!editing) return;
+    await window.baton.editMemory(editing.id, editing.text);
+    setItems((await window.baton.listMemory()) as Memory[]);
+    setEditing(null);
+  }
+  return (
+    <div className="notes memory">
+      <div className="label">Memory: what Baton remembers about you (say “remember that…” or “forget…”)</div>
+      {items.length === 0 ? (
+        <div className="empty">Nothing yet.</div>
+      ) : (
+        <ul>
+          {items.map((m) => (
+            <li key={m.id}>
+              <span className="site">{m.kind === 'task' ? 'past plan' : m.label}</span>
+              {editing?.id === m.id ? (
+                <input
+                  value={editing.text}
+                  onChange={(e) => setEditing({ id: m.id, text: e.target.value })}
+                  onKeyDown={(e) => e.key === 'Enter' && void save()}
+                  aria-label="Edit memory"
+                />
+              ) : (
+                <span
+                  className="text"
+                  onDoubleClick={() => m.kind !== 'task' && setEditing({ id: m.id, text: m.text })}
+                >
+                  {m.kind === 'task' ? m.label : m.text}
+                </span>
+              )}
+              <span className="row-actions">
+                {editing?.id === m.id ? (
+                  <button className="btn ghost small" onClick={() => void save()}>
+                    Save
+                  </button>
+                ) : (
+                  m.kind !== 'task' && (
+                    <button className="btn ghost small" onClick={() => setEditing({ id: m.id, text: m.text })}>
+                      Edit
+                    </button>
+                  )
+                )}
+                <button
+                  className="btn ghost small"
+                  onClick={() => void window.baton.removeMemory(m.id).then((x) => setItems(x as Memory[]))}
+                >
+                  Delete
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 type Note = { id: number; site: string; note: string; source: string };
 
 // Baton's memory of how sites work: what lanes have learned, for the person to review.
@@ -97,6 +166,7 @@ export function Podium() {
   const [lanes, setLanes] = useState<LaneView[]>([]);
   const [caption, setCaption] = useState('');
   const [thinking, setThinking] = useState('');
+  const [usedMemory, setUsedMemory] = useState<string[]>([]);
   const [posts, setPosts] = useState<
     Array<{ id: number; laneName: string; color?: string; text: string; adjusts?: number }>
   >([]);
@@ -135,6 +205,7 @@ export function Podium() {
       }),
       window.baton.onNotice((t) => setPhase({ kind: 'notice', text: String(t), tone: toneOf(String(t)) })),
       window.baton.onThinking((t) => setThinking(String(t))),
+      window.baton.onMemoryUsed((u) => setUsedMemory(u as string[])),
       window.baton.onChannel((p) => setPosts(p as typeof posts)),
       window.baton.onSound((s) => (s === 'plan' ? sounds.plan() : undefined)),
       window.baton.onLanes((l) => {
@@ -224,6 +295,7 @@ export function Podium() {
     setLevels(Array(BARS).fill(0));
     setCaption('');
     setThinking('');
+    setUsedMemory([]);
     captions.current.updates = 0;
     setPhase({ kind: 'opening' });
     try {
@@ -356,6 +428,16 @@ export function Podium() {
           ))}
         </div>
       )}
+      {usedMemory.length > 0 && (
+        <div className="used" aria-label="Memories this plan used">
+          used:{' '}
+          {usedMemory.map((u) => (
+            <span key={u} className="chip-used">
+              {u}
+            </span>
+          ))}
+        </div>
+      )}
       <Lanes lanes={lanes} />
       {lanes.length > 0 && posts.length > 0 && (
         <div className="thread" aria-label="What the lanes told each other">
@@ -398,6 +480,7 @@ export function Podium() {
           </div>
           {profile && <ProfileForm initial={profile} />}
           <Budget />
+          <MemorySection />
           <SiteNotes />
           <ol>
             <li>In Chrome, open the Baton extension’s options.</li>

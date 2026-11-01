@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 import type { Anchor } from './anchor.js';
-import { CUE_SYSTEM, CueMove, anchorBlock } from './interpret.js';
+import { CUE_SYSTEM, CueMove, MEMORY_RULE, anchorBlock } from './interpret.js';
 import { profileLines, type Profile } from './profile.js';
 import { Part } from '../score/score.js';
 
@@ -22,13 +22,22 @@ This time you hear the request as audio instead of reading it. Reply with ONE JS
 {"transcript": exactly what was said, "intent": a few words, "move": one of the moves above}
 Write the transcript first, and transcribe only what is actually said in the audio: the example requests above are examples, not what the person said. For a "score", write "kind", "title" and then "partCount" (how many parts) before "parts", and write each part completely before starting the next. Pointing words: "this" usually means the anchor pointed at while saying it (anchors are numbered in the order pointed, with their times); "there" usually means the last one. If there is no speech, the transcript is empty and the move is {"kind":"clarify","question":"I didn't catch that."}.`;
 
-export function listenText(i: { anchors: Anchor[]; profile: Profile; sites: string; heldMs: number }): string {
+export function listenText(i: {
+  anchors: Anchor[];
+  profile: Profile;
+  sites: string;
+  heldMs: number;
+  memories?: string;
+}): string {
   return [
     `The audio is ${(i.heldMs / 1000).toFixed(1)} s long.`,
     i.anchors.length ? i.anchors.map(anchorBlock).join('\n\n') : 'The person did not point at anything.',
     `Profile (facts the person chose to share):\n${profileLines(i.profile)}`,
+    i.memories ? `${MEMORY_RULE}\n${i.memories}` : '',
     i.sites,
-  ].join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 // Reads a JSON answer as it grows. Reports the transcript as soon as its string closes, the plan's

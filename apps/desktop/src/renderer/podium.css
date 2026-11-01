@@ -720,3 +720,35 @@ select option {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Memory: the list in settings, and the "used:" chips on a plan */
+.memory li {
+  grid-template-columns: 120px 1fr auto;
+}
+.memory .row-actions {
+  display: flex;
+  gap: 4px;
+}
+.memory input {
+  width: 100%;
+}
+.memory .empty {
+  font-size: 12.5px;
+  color: var(--paper-2);
+  margin-top: 4px;
+}
+.used {
+  padding: 6px 16px 8px;
+  font-size: 12px;
+  color: var(--paper-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chip-used {
+  padding: 1px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  color: var(--paper);
+}

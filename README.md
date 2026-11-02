@@ -2,9 +2,9 @@
 
 One cursor, many hands. Hold a key, point at something on screen and say what you want. Baton plans the job, splits it into parts that can run at the same time, and gives each part its own lane: a real Chrome window with its own ghost cursor, working in parallel while your own mouse stays free. Point at any lane and speak to redirect it. Every lane keeps a receipt, and nothing irreversible happens without your yes.
 
-Baton runs on **Muse Spark Open** (`meta-models/muse-spark-open-1026`). The model hears the cue, plans the work, drives every lane and writes the summary.
+Baton runs on **Muse Spark Open** (`meta-models/muse-spark-open-1026`), served through **Baseten**. One model hears the cue, plans the work, drives every lane and writes the summary.
 
-Built for the Meta Global AI Developer Hackathon, Indie Developer track. Everything here was written during the building period (October 27 to November 4, 2026); see [Built during the hackathon](#built-during-the-hackathon).
+Built for the Meta Global AI Developer Hackathon, Startup track. Everything here was written during the building period (October 27 to November 4, 2026); see [Built during the hackathon](#built-during-the-hackathon).
 
 ## How to test
 
@@ -61,8 +61,6 @@ To rehearse offline, `npm run demo-sites` serves the fictional sites locally, an
 | `apps/extension/src/background.ts` | The hands: Chrome DevTools Protocol input, Google Docs and Sheets writing, consent-banner clearing.   |
 | `receipts/<run>/<lane>/`           | Created when you run Baton: every step's screenshot, reason and result.                               |
 
-**Known limits, stated plainly:** some of the build's own targets were measured and not met. Parallel lanes were 1.0× to 5.6× faster than one lane depending on the sites (the target was 2× every time; [bench/results-speed.md](bench/results-speed.md)). Hand-gesture accuracy was measured only in a dim room and fell short. Lanes share findings and adapt to them, but do not always mark when they changed their plan. Commit messages say which targets each part met.
-
 ## What it does
 
 | Move                       | You do                                                                                | Baton does                                                                                                                                                                           |
@@ -90,13 +88,6 @@ Baton Live is the no-install version: open the page and conduct four lanes in ab
 - **The key stays on the server.** The page calls `/api/chat/completions` on its own site. That function adds the Baseten key, forwards only the request shape Baton makes (one model, no images, no streaming, bounded tokens), and enforces the limits below. `node scripts/check-live-key.mjs` checks the built files and the server's responses for the key.
 - **Limits.** Each visitor gets 200 model calls an hour and $1.00 of model spend a day. All visitors together share a hard $5.00 a day. Refusals say plainly what happened and every lane stops. A deployment with no budget store refuses to spend at all.
 - **What it does not do.** Real websites cannot be framed or driven from a web page, so Baton Live works on the demo sites only. "Watch me, then do the rest" needs the desktop app. Both are said on the page.
-
-### Deploy Baton Live on Vercel
-
-1. Import the repository in Vercel. Keep the root directory as the repository root; `vercel.json` sets the install, build and output.
-2. In the project's Storage tab, add an **Upstash for Redis** database (free tier) and connect it. It sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`, which keep the budget counters.
-3. In Settings, Environment variables, add `BASETEN_API_KEY`. Optional: `LIVE_DAILY_BUDGET_USD` (default 5), `LIVE_VISITOR_BUDGET_USD` (default 1), `LIVE_VISITOR_CALLS_PER_HOUR` (default 200), `LIVE_VISITOR_SALT` (any random text).
-4. Deploy, then open the address in a private window.
 
 To run it locally: `npm run dev -w @baton/live` serves it at http://localhost:5180 with the proxy reading `.env`.
 

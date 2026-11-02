@@ -4,16 +4,77 @@ One cursor, many hands. Hold a key, point at something on screen and say what yo
 
 Baton runs on **Muse Spark Open** (`meta-models/muse-spark-open-1026`), served through **Baseten**. One model hears the cue, plans the work, drives every lane and writes the summary.
 
-Built for the Meta Global AI Developer Hackathon, Startup track.
+Built for the Meta Global AI Developer Hackathon, Startup track. Everything here was written during the building period (October 27 to November 4, 2026); see [Built during the hackathon](#built-during-the-hackathon).
+
+## How to test
+
+You need Node.js 20+. Pick the depth you have time for.
+
+### 1. Run the tests (2 minutes, no key, no network)
+
+```bash
+npm install
+```
+
+```bash
+npm test
+```
+
+221 unit tests run against a fake browser and a fake model: the lane loop, safety rules, planning and scheduling, lanes posting findings to each other, memory, pointing and recorded voice cues, hand-gesture maths, the spend governor, and Baton Live's model proxy. `npm run typecheck` and `npm run lint` check the rest.
+
+### 2. Baton Live in a browser (5 minutes, needs a Baseten key)
+
+```bash
+cp .env.example .env
+```
+
+Put your Baseten key in `.env` (`BASETEN_API_KEY=…`), then:
+
+```bash
+npm run dev -w @baton/live
+```
+
+Open http://localhost:5180 and follow the tour, or hold Space and say "Get me there". Four lanes work at once on fictional demo sites rendered in your page. Lanes ask before anything irreversible.
+
+### 3. The desktop app on real websites (15 minutes, Windows, Chrome, a Baseten key)
+
+1. With the key in `.env`, run `npm run build`. It builds the extension into `apps/extension/dist`.
+2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose `apps/extension/dist`.
+3. Start Baton with `npm run desktop`. The Podium appears at the top of the screen. Copy the pairing token from the tray icon into the extension's options. The Podium shows "Chrome connected".
+4. Hold **Alt**, speak, release. Try a request with independent parts, for example: "Compare the weather this weekend in Lisbon, Porto and Madrid." Add "write it up in this doc: <a Google Doc you own>" and a final lane writes the results there.
+5. While a lane works, hold Alt, rest the pointer on its window and say a correction ("only places open on Sunday"). It goes to that lane alone.
+6. Say "Remember that my hotel budget is under 150 a night", then plan a trip. The plan shows a "used: hotel budget" chip. Open the Podium's settings to see, edit or delete what Baton remembers.
+7. Open the Score view after a run to replay each lane step by step, with screenshots and what the lanes told each other.
+
+To rehearse offline, `npm run demo-sites` serves the fictional sites locally, and `npm run demo:reset` puts them back in their starting state.
+
+**What to look for in the code:**
+
+| Where                              | What                                                                                                  |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `packages/core/src/lane/loop.ts`   | The lane loop: look, decide, check, act, verify, with step timing and loop guards.                    |
+| `packages/core/src/safety/`        | The deterministic approval gate, blocked password and card fields, and the injection detector.        |
+| `packages/core/src/cue/`           | One streamed model call that hears the audio, reads the pointer anchors and plans the parallel parts. |
+| `packages/core/src/score/`         | The scheduler and the channel that lanes use to share findings.                                       |
+| `packages/core/src/memory/`        | What Baton remembers, with no secrets stored.                                                         |
+| `packages/model/src/`              | The Baseten client for Muse Spark Open and the spend governor.                                        |
+| `apps/extension/src/background.ts` | The hands: Chrome DevTools Protocol input, Google Docs and Sheets writing, consent-banner clearing.   |
+| `receipts/<run>/<lane>/`           | Created when you run Baton: every step's screenshot, reason and result.                               |
+
+**Known limits, stated plainly:** some of the build's own targets were measured and not met. Parallel lanes were 1.0× to 5.6× faster than one lane depending on the sites (the target was 2× every time; [bench/results-speed.md](bench/results-speed.md)). Hand-gesture accuracy was measured only in a dim room and fell short. Lanes share findings and adapt to them, but do not always mark when they changed their plan. Commit messages say which targets each part met.
 
 ## What it does
 
-| Move                       | You do                                                                              | Baton does                                                                                                                                                         |
-| -------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Conduct**                | Point at a conference invitation and say "get me there".                            | Plans four parts (flights, hotel, calendar entry, reply draft), opens four lanes tiled on screen, runs them in parallel, and gathers every approval onto one card. |
-| **This, there**            | Point at an invoice, then at the accounts page, and say "put this there".           | Reads the invoice, fills the bill form, stops before saving.                                                                                                       |
-| **Rehearse, then perform** | Say "watch me", enter one invoice by hand, say "that's it", then "now do the rest". | Learns the routine from what you did, finds the remaining items, asks once for the whole batch and enters them four lanes at a time.                               |
-| **Redirect**               | Point at a running lane and say "only nonstop flights".                             | Sends the words to that lane alone, which carries on in its own window.                                                                                            |
+| Move                       | You do                                                                                | Baton does                                                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Conduct**                | Point at a conference invitation and say "get me there".                              | Plans four parts (flights, hotel, calendar entry, reply draft), opens four lanes tiled on screen, runs them in parallel, and gathers every approval onto one card.                   |
+| **This, there**            | Point at an invoice, then at the accounts page, and say "put this there".             | Reads the invoice, fills the bill form, stops before saving.                                                                                                                         |
+| **Rehearse, then perform** | Say "watch me", enter one invoice by hand, say "that's it", then "now do the rest".   | Learns the routine from what you did, finds the remaining items, asks once for the whole batch and enters them four lanes at a time.                                                 |
+| **Redirect**               | Point at a running lane and say "only nonstop flights".                               | Sends the words to that lane alone, which carries on in its own window.                                                                                                              |
+| **Real websites**          | Ask about anything on the open web, or "write it up in this doc".                     | Lanes work in your own signed-in Chrome: they clear consent banners (choosing the most private option), read and write Google Docs and Sheets, and keep site notes on what worked.   |
+| **Lanes that talk**        | Plan a weekend: weather, hotel, places to eat, a museum.                              | Each lane posts its key finding to the others. When the weather lane finds rain, the others can switch to indoor places, and the write-up gets everything they shared.               |
+| **Memory**                 | "Remember that my hotel budget is under 150 a night." Later: "Do the same for Porto." | Uses what you told it when planning, shows which memories a plan used, and reuses a past plan. You can see, edit and delete every item. Passwords and card numbers are never stored. |
+| **Conduct by hand**        | Turn on the camera, point, pinch to pin, open palm to stop.                           | Tracks your hand on the device with MediaPipe; camera frames never leave the computer. A gesture can never approve anything.                                                         |
 
 When the work is done, the Score view replays every lane as a staff line: one note per step, approvals marked, the screenshots underneath.
 
@@ -43,7 +104,7 @@ To run it locally: `npm run dev -w @baton/live` serves it at http://localhost:51
 
 ### Desktop app (Windows)
 
-1. Get `Baton-Setup-0.1.0.exe` and `baton-extension-0.5.0.zip` from the repository's Releases page, or build both with `npm run dist` (they land in `release/`).
+1. Get `Baton-Setup-0.1.0.exe` and `baton-extension-<version>.zip` from the repository's Releases page, or build both with `npm run dist` (they land in `release/`).
 2. Run the installer. It is not code-signed, so Windows SmartScreen shows "Windows protected your PC": choose **More info**, then **Run anyway**.
 3. Create `%APPDATA%\Baton\.env` containing your key:
    ```
@@ -54,7 +115,7 @@ To run it locally: `npm run dev -w @baton/live` serves it at http://localhost:51
 
 ### Chrome extension
 
-1. Unzip `baton-extension-0.5.0.zip` into a folder you will keep.
+1. Unzip `baton-extension-<version>.zip` into a folder you will keep.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose that folder.
 3. Open the extension's options, paste the pairing token from the Podium and save. The Podium shows "Chrome connected".
 
@@ -159,7 +220,7 @@ Measured against `meta-models/muse-spark-open-1026` on Baseten before any featur
 - **Lane steps:** native tool calling with `tool_choice: "required"`. JSON in the prompt failed about 1 step in 20; tool calls fixed it.
 - **Structured output:** JSON parsed from the reply, validated with zod, retried once with the validation error, then the lane pauses and says why.
 - **Images:** base64 data URLs; 1280 px wide is the sweet spot (4.7 s, correct every time). A text-only step takes 1.2 s.
-- **Voice:** the push-to-talk recording goes straight to the model as 16 kHz mono WAV padded with 1 s of silence each side. Unpadded short cues were heard 0–2 times in 5; padded, 31 of 32. No separate speech model.
+- **Voice:** the push-to-talk recording goes straight to the model as 16 kHz mono WAV padded with 1 s of silence each side. Unpadded short cues were heard 0–2 times in 5; padded, 31 of 32. Since then, one streamed call hears the audio and returns the transcript and the plan together, and lanes start as soon as their part of the plan arrives. The on-screen caption comes from a small Whisper model running locally; Muse Spark Open still hears the audio itself.
 - **Parallelism:** eight steps sent at once finished in about 6 s, 6–7× faster than in sequence.
 
 ## Benchmark
@@ -183,7 +244,7 @@ Parallel lanes were up to 1.7× faster on requests with independent parts, and s
 npm test
 ```
 
-173 unit tests cover the bridge protocol, pairing, safety rules, the lane loop (with a fake browser and a fake model), verification, pointing and cue fixtures (including recorded real cues), Scores, the scheduler and its approval point, tiling, routine learning from recorded rehearsals, the spend governor and Baton Live's model proxy (its limits, what it forwards, and that the key never appears in a response). `npm run typecheck` and `npm run lint` are clean.
+221 unit tests cover the bridge protocol, pairing, safety rules, the lane loop (with a fake browser and a fake model), verification, pointing and cue fixtures (including recorded real cues), Scores, the scheduler and its approval point, tiling, routine learning from recorded rehearsals, the spend governor the lanes' shared channel, memory, hand-gesture maths (smoothing, calibration, gesture voting), Baton Live's model proxy (its limits, what it forwards, and that the key never appears in a response), and that the model name is `meta-models/muse-spark-open-1026` everywhere. `npm run typecheck` and `npm run lint` are clean.
 
 ## Built during the hackathon
 
@@ -191,14 +252,20 @@ Everything in this repository was written from scratch between October 27 and No
 
 The commit history shows each part as it was built:
 
-| Stage                      | What was built                                                                                                                                                                                    |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Starter kit                | The spec, build plan and film script (documents only, no code).                                                                                                                                   |
-| 0 · Model contract         | The measured contract with Muse Spark Open: request shape, JSON, images, padded audio, streaming, parallel throughput, cost.                                                                      |
-| 1 · Hands and Podium       | The Chrome extension (CDP hands, marks, ghost cursor), the paired WebSocket bridge, the Electron Podium and push-to-talk with a configurable key.                                                 |
-| 2 · One lane               | The lane step loop, tool-calling decisions, deterministic verification, approvals, blocked fields, the injection detector, receipts, the demo sites and the single-lane benchmark.                |
-| 3 · Point and speak        | Pointer anchors, spoken cues sent as padded audio, deixis ("this", "there") and the cue interpreter.                                                                                              |
-| 4 · The conductor          | Scores (validated plans of parallel parts), the scheduler, window tiling, bundled approvals, redirecting a lane by pointing, the Score view and the parallel benchmark.                           |
-| 5 · Rehearse, then perform | Recording a rehearsal, learning a routine with variables, finding the remaining items and performing them in batches; the spend governor.                                                         |
-| 6 · Ship                   | The ink-and-brass design system ([docs/DESIGN.md](docs/DESIGN.md)), sounds, demo reset, the Windows installer and the extension package.                                                          |
-| 7 · Baton Live             | The browser version: demo sites rendered per visitor, DOM hands shared with the extension, push-to-talk and typed requests, the guided tour, and the rate-limited model proxy with its key check. |
+| Stage                      | What was built                                                                                                                                                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Starter kit                | The spec, build plan and film script (documents only, no code).                                                                                                                                                         |
+| 0 · Model contract         | The measured contract with Muse Spark Open: request shape, JSON, images, padded audio, streaming, parallel throughput, cost.                                                                                            |
+| 1 · Hands and Podium       | The Chrome extension (CDP hands, marks, ghost cursor), the paired WebSocket bridge, the Electron Podium and push-to-talk with a configurable key.                                                                       |
+| 2 · One lane               | The lane step loop, tool-calling decisions, deterministic verification, approvals, blocked fields, the injection detector, receipts, the demo sites and the single-lane benchmark.                                      |
+| 3 · Point and speak        | Pointer anchors, spoken cues sent as padded audio, deixis ("this", "there") and the cue interpreter.                                                                                                                    |
+| 4 · The conductor          | Scores (validated plans of parallel parts), the scheduler, window tiling, bundled approvals, redirecting a lane by pointing, the Score view and the parallel benchmark.                                                 |
+| 5 · Rehearse, then perform | Recording a rehearsal, learning a routine with variables, finding the remaining items and performing them in batches; the spend governor.                                                                               |
+| 6 · Ship                   | The ink-and-brass design system ([docs/DESIGN.md](docs/DESIGN.md)), sounds, demo reset, the Windows installer and the extension package.                                                                                |
+| 7 · Baton Live             | The browser version: demo sites rendered per visitor, DOM hands shared with the extension, push-to-talk and typed requests, the guided tour, and the rate-limited model proxy with its key check.                       |
+| 8 · Real websites          | Consent-banner and pop-up clearing, captcha detection, Google Docs and Sheets reading and writing, site notes, and a benchmark on real sites ([bench/results-real.md](bench/results-real.md)).                          |
+| 9 · The conductor's hand   | Camera gestures: MediaPipe hand tracking, One Euro smoothing, four-corner calibration, held-gesture recognition, a pointer overlay, pinch to pin.                                                                       |
+| 10 · Instant voice         | One streamed call from audio to plan, lanes that start while the plan is still arriving, and live local captions.                                                                                                       |
+| 11 · Faster lanes          | Step timing measured on real sites, then fixes: no settle wait unless the page navigated, shorter cursor glides, and guards against circling and guessing addresses ([bench/results-speed.md](bench/results-speed.md)). |
+| 12 · Lanes that talk       | The shared channel: bounded posts, injection-checked, with plan changes marked; the write-up gets every finding ([bench/results-channel.md](bench/results-channel.md)).                                                 |
+| 13 · Memory                | Facts, preferences (saved only after asking) and past plans, used when planning and editable in the Podium.                                                                                                             |

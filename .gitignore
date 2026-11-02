@@ -12,3 +12,6 @@ video/out/
 apps/live/public/
 apps/desktop/assets/hand_landmarker.task
 apps/desktop/assets/models/
+
+# Private submission checklist, kept locally
+SETUP.md

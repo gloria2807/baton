@@ -4,7 +4,7 @@ One cursor, many hands. Hold a key, point at something on screen and say what yo
 
 Baton runs on **Muse Spark Open** (`meta-models/muse-spark-open-1026`), served through **Baseten**. One model hears the cue, plans the work, drives every lane and writes the summary.
 
-Built for the Meta Global AI Developer Hackathon, Startup track. Everything here was written during the building period (October 27 to November 4, 2026); see [Built during the hackathon](#built-during-the-hackathon).
+Built for the Meta Global AI Developer Hackathon, Indie track. Everything here was written during the building period (October 27 to November 4, 2026); see [Built during the hackathon](#built-during-the-hackathon).
 
 ## How to test
 

@@ -27,54 +27,94 @@ export function costUsd(u: { input: number; output: number }): number {
   return (u.input * PRICE.inputPerM + u.output * PRICE.outputPerM) / 1e6;
 }
 
+// Reopens a lane's window when it disappears (closed by hand, or by Chrome), so the lane carries on.
+type Reopen = {
+  color: string;
+  title: string;
+  startUrl: string;
+  bounds?: { left: number; top: number; width: number; height: number };
+};
+const MAX_REOPENS = 2;
+
 export class BridgeHands implements Hands {
+  private lastUrl = '';
+  private reopens = 0;
   constructor(
     private bridge: BridgeServer,
     private laneId: string,
+    private reopen?: Reopen,
   ) {}
+
+  // Every command goes through here: if the lane's window is gone, open it again at the last page
+  // it showed and retry once, instead of failing step after step against a window that is not there.
+  private async request<T>(command: Parameters<BridgeServer['request']>[0], timeoutMs?: number): Promise<T> {
+    try {
+      return await this.bridge.request<T>(command, timeoutMs);
+    } catch (e) {
+      if (!this.reopen || !/is not open/.test((e as Error).message) || this.reopens >= MAX_REOPENS) throw e;
+      this.reopens++;
+      const url = this.lastUrl || this.reopen.startUrl;
+      log(`lane ${this.laneId}: its window was gone; reopened (${this.reopens} of ${MAX_REOPENS})`);
+      await this.bridge.request(
+        {
+          op: 'openLane',
+          laneId: this.laneId,
+          url,
+          color: this.reopen.color,
+          title: this.reopen.title,
+          bounds: this.reopen.bounds,
+        },
+        30000,
+      );
+      return await this.bridge.request<T>(command, timeoutMs);
+    }
+  }
+
   async look(screenshot: boolean) {
-    return LookResult.parse(
-      await this.bridge.request({ op: 'look', laneId: this.laneId, screenshot, maxWidth: 1280 }, 30000),
+    const r = LookResult.parse(
+      await this.request({ op: 'look', laneId: this.laneId, screenshot, maxWidth: 1280 }, 30000),
     );
+    if (/^https?:/.test(r.url)) this.lastUrl = r.url;
+    return r;
   }
   async open(url: string) {
-    await this.bridge.request({ op: 'navigate', laneId: this.laneId, url }, 30000);
+    await this.request({ op: 'navigate', laneId: this.laneId, url }, 30000);
   }
   async click(mark: number) {
-    await this.bridge.request({ op: 'click', laneId: this.laneId, mark }, 20000);
+    await this.request({ op: 'click', laneId: this.laneId, mark }, 20000);
   }
   async type(mark: number, text: string, submit: boolean) {
-    await this.bridge.request({ op: 'type', laneId: this.laneId, mark, text, submit }, 20000);
+    await this.request({ op: 'type', laneId: this.laneId, mark, text, submit }, 20000);
   }
   async select(mark: number, option: string) {
-    await this.bridge.request({ op: 'select', laneId: this.laneId, mark, option });
+    await this.request({ op: 'select', laneId: this.laneId, mark, option });
   }
   async scroll(by: { dy: number } | { mark: number }) {
-    await this.bridge.request({ op: 'scroll', laneId: this.laneId, ...by });
+    await this.request({ op: 'scroll', laneId: this.laneId, ...by });
   }
   async fillCells(mark: number, rows: string[][]) {
-    await this.bridge.request({ op: 'fillCells', laneId: this.laneId, mark, rows }, 30000);
+    await this.request({ op: 'fillCells', laneId: this.laneId, mark, rows }, 30000);
   }
   async back() {
-    await this.bridge.request({ op: 'back', laneId: this.laneId }, 20000);
+    await this.request({ op: 'back', laneId: this.laneId }, 20000);
   }
   async thinking(text: string) {
-    await this.bridge.request({ op: 'setThinking', laneId: this.laneId, text: text.slice(0, 140) });
+    await this.request({ op: 'setThinking', laneId: this.laneId, text: text.slice(0, 140) });
   }
   async focus() {
-    await this.bridge.request({ op: 'focusLane', laneId: this.laneId });
+    await this.request({ op: 'focusLane', laneId: this.laneId });
   }
   async sheetWrite(cell: string, rows: string[][]) {
-    await this.bridge.request({ op: 'sheetWrite', laneId: this.laneId, cell, rows }, 60000);
+    await this.request({ op: 'sheetWrite', laneId: this.laneId, cell, rows }, 60000);
   }
   async sheetRead(range?: string) {
-    return String(await this.bridge.request({ op: 'sheetRead', laneId: this.laneId, range }, 30000));
+    return String(await this.request({ op: 'sheetRead', laneId: this.laneId, range }, 30000));
   }
   async docWrite(text: string) {
-    await this.bridge.request({ op: 'docWrite', laneId: this.laneId, text }, 60000);
+    await this.request({ op: 'docWrite', laneId: this.laneId, text }, 60000);
   }
   async docRead() {
-    return String(await this.bridge.request({ op: 'docRead', laneId: this.laneId }, 30000));
+    return String(await this.request({ op: 'docRead', laneId: this.laneId }, 30000));
   }
 }
 
@@ -160,7 +200,12 @@ export async function launchLane(
       30000,
     );
   l.onOpen?.();
-  const hands = new BridgeHands(bridge, l.laneId);
+  const hands = new BridgeHands(bridge, l.laneId, {
+    color: l.color,
+    title: l.name,
+    startUrl: l.spec.startUrl ?? '',
+    bounds: l.bounds,
+  });
   let outcome: LaneOutcome;
   try {
     // The lane window already opened at the start URL.

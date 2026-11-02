@@ -617,7 +617,10 @@ export class Conductor {
       this.publishLanes();
     }
     const bounds = tile(run.slots.length, workArea, 110)[slot];
-    let goal = partGoal(goalWithProfile(part.goal, this.getProfile()));
+    // A part that writes into a Doc or Sheet never gets the person's name and email: it would type them into the file.
+    const writesFile = /docs\.google\.com\/(document|spreadsheets)\//.test(part.startUrl);
+    const withProfile = (g: string) => (writesFile ? g : goalWithProfile(g, this.getProfile()));
+    let goal = partGoal(withProfile(part.goal));
     // A part that waits on others (the write-up) starts with everything the lanes shared, so the
     // plan reflects their adjustments.
     const shared = run.channel.all();
@@ -640,7 +643,7 @@ export class Conductor {
       st.receipts.push(out.receipts);
       // Redirected while waiting: carry on in the same window with the new instruction.
       if (st.redirect && !this.stopRequested.has(st.laneId)) {
-        goal = `${partGoal(goalWithProfile(part.goal, this.getProfile()))}\n\nThe person then told this lane: “${st.redirect}”. Follow that; it overrides the goal where they conflict.`;
+        goal = `${partGoal(withProfile(part.goal))}\n\nThe person then told this lane: “${st.redirect}”. Follow that; it overrides the goal where they conflict.`;
         st.redirect = undefined;
         st.attempt++;
         continue;

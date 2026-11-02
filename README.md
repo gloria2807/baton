@@ -2,9 +2,9 @@
 
 One cursor, many hands. Hold a key, point at something on screen and say what you want. Baton plans the job, splits it into parts that can run at the same time, and gives each part its own lane: a real Chrome window with its own ghost cursor, working in parallel while your own mouse stays free. Point at any lane and speak to redirect it. Every lane keeps a receipt, and nothing irreversible happens without your yes.
 
-Baton runs on **Muse Spark Open** (`meta-models/muse-spark-open-1026`), built end-to-end during the hackathon period. One model hears the cue, plans the work, drives every lane and writes the summary.
+Baton runs on **Muse Spark Open** (`meta-models/muse-spark-open-1026`). The model hears the cue, plans the work, drives every lane and writes the summary.
 
-Built for the Meta Global AI Developer Hackathon, Startup track. Everything here was written during the building period (October 27 to November 4, 2026); see [Built during the hackathon](#built-during-the-hackathon).
+Built for the Meta Global AI Developer Hackathon, Indie Developer track. Everything here was written during the building period (October 27 to November 4, 2026); see [Built during the hackathon](#built-during-the-hackathon).
 
 ## How to test
 
